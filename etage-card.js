@@ -403,6 +403,39 @@ class EtageCard extends HTMLElement {
     return '#f43f5e';
   }
 
+  /* ── Extra infos : humidité + batterie ── */
+  _extraInfo(e) {
+    if (!e || !this._hass) return '';
+    const s = this._hass.states[e];
+    if (!s) return '';
+    const attrs = s.attributes || {};
+
+    // Humidité
+    const hum = attrs.humidity ?? null;
+    // Batterie (plusieurs noms possibles)
+    const bat = attrs.battery ?? attrs.battery_level ?? attrs.battery_percent ?? null;
+
+    let html = '';
+    if (hum !== null) {
+      const h = parseFloat(hum);
+      const hCol = h < 40 ? '#60a5fa' : h < 60 ? '#34d399' : h < 75 ? '#fbbf24' : '#f43f5e';
+      html += `<div class="extra-item">
+        <span class="extra-ico">💧</span>
+        <span class="extra-val" style="color:${hCol}">${h.toFixed(0)}<span class="extra-unit">%</span></span>
+      </div>`;
+    }
+    if (bat !== null) {
+      const b = parseFloat(bat);
+      const bCol = b > 60 ? '#34d399' : b > 30 ? '#fbbf24' : '#f43f5e';
+      const bIcon = b > 60 ? '🔋' : b > 30 ? '🪫' : '⚠️';
+      html += `<div class="extra-item">
+        <span class="extra-ico">${bIcon}</span>
+        <span class="extra-val" style="color:${bCol}">${b.toFixed(0)}<span class="extra-unit">%</span></span>
+      </div>`;
+    }
+    return html ? `<div class="extra-row">${html}</div>` : '';
+  }
+
   /* ── Render tabs ── */
   _renderTabs() {
     return this._tabs.map((t, i) => `
@@ -430,10 +463,12 @@ class EtageCard extends HTMLElement {
         const pct = isNaN(num) ? 0 : Math.min(100, Math.max(0, ((num - 10) / 30) * 100));
         const col = this._tempColor(val);
         const nm  = names[i] || e.split('.')[1]?.replace(/_/g,' ');
+        const extra = this._extraInfo(e);
         return `<div class="temp-card">
           <div class="temp-name">${nm}</div>
           <div class="temp-val" style="color:${col}">${isNaN(num)?'—':num.toFixed(1)}<span class="unit">${unit}</span></div>
           <div class="temp-bar-bg"><div class="temp-bar" style="width:${pct}%;background:${col}"></div></div>
+          ${extra}
         </div>`;
       }).join('');
     if (!items) return `<div class="empty-panel">Aucun capteur configuré</div>`;
@@ -450,10 +485,12 @@ class EtageCard extends HTMLElement {
       .map(({ e, i }) => {
         const open = this._isOn(e);
         const nm   = names[i] || e.split('.')[1]?.replace(/_/g,' ');
+        const extra = this._extraInfo(e);
         return `<div class="window-card ${open?'open':'closed'}">
           <div class="win-svg">${open ? this._svgWindowOpen() : this._svgWindowClosed()}</div>
           <div class="win-name">${nm}</div>
           <div class="win-status ${open?'status-open':'status-closed'}">${open?'Ouverte':'Fermée'}</div>
+          ${extra}
         </div>`;
       }).join('');
     if (!items) return `<div class="empty-panel">Aucune fenêtre configurée</div>`;
@@ -605,7 +642,8 @@ class EtageCard extends HTMLElement {
     const on   = this._isOn(e);
     const s    = this._state(e);
     const nm   = names[0] || (e ? e.split('.')[1]?.replace(/_/g,' ') : 'Détecteur de fumée');
-    const last = s?.last_changed ? new Date(s.last_changed).toLocaleString('fr-FR') : '—';
+    const last  = s?.last_changed ? new Date(s.last_changed).toLocaleString('fr-FR') : '—';
+    const extra = this._extraInfo(e);
     return `
       <div class="fumee-center">
         <div class="fumee-ring ${on?'fumee-alarm':'fumee-ok'}">
@@ -617,6 +655,7 @@ class EtageCard extends HTMLElement {
         <div class="fumee-status ${on?'f-alarm':'f-ok'}">
           ${on ? '🚨 ALARME DÉTECTÉE !' : '✅ Tout est normal'}
         </div>
+        ${extra ? `<div class="fumee-extra">${extra}</div>` : ''}
         <div class="fumee-meta">Dernier changement : ${last}</div>
         ${on?`<div class="fumee-pulse"></div>`:''}
       </div>`;
@@ -670,6 +709,19 @@ class EtageCard extends HTMLElement {
       .live-dot { width:7px; height:7px; border-radius:50%; background:#34d399;
         box-shadow:0 0 6px #34d399; animation:pulse 2s infinite; }
       @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+      /* ── Extra infos (humidité / batterie) ── */
+      .extra-row {
+        display:flex; gap:6px; margin-top:5px; flex-wrap:wrap;
+      }
+      .extra-item {
+        display:flex; align-items:center; gap:3px;
+        background:#0f172a; border:1px solid #1e3a5f;
+        border-radius:99px; padding:2px 7px 2px 5px;
+      }
+      .extra-ico { font-size:10px; line-height:1; }
+      .extra-val { font-size:10px; font-weight:700; }
+      .extra-unit { font-size:8px; font-weight:400; opacity:.7; margin-left:1px; }
 
       /* ── Barre de statut ── */
       .statusbar {
@@ -871,6 +923,8 @@ class EtageCard extends HTMLElement {
       .f-ok    { color:#34d399; }
       .f-alarm { color:#f43f5e; animation:blink .5s infinite; }
       @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.5} }
+      .fumee-extra { margin:4px 0; }
+      .fumee-extra .extra-row { justify-content:center; }
       .fumee-meta { font-size:10px; color:#475569; }
 
       /* ── Scrollbar ── */
