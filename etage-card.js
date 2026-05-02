@@ -64,20 +64,27 @@ class EtageCardEditor extends HTMLElement {
       </button>`).join('');
 
     const rowsHTML = Array.from({ length: sec.count }, (_, i) => {
-      const optsHTML = allE.map(e => `<option value="${e}">${e}</option>`).join('');
+      const curVal  = entities[i] || '';
       const safeName = (names[i] || '').replace(/"/g, '&quot;');
       return `
-        <div class="erow">
+        <div class="erow" data-rowidx="${i}">
           <span class="enum">${i + 1}</span>
           <input class="ename" type="text"
             placeholder="Label..."
             data-key="${sec.key}_names"
             data-idx="${i}"
             value="${safeName}" />
-          <select class="esel" data-key="${sec.key}" data-idx="${i}">
-            <option value="">— choisir entite —</option>
-            ${optsHTML}
-          </select>
+          <div class="combo" data-idx="${i}" data-key="${sec.key}">
+            <div class="combo-display">
+              <input class="combo-search" type="text"
+                placeholder="🔍 Rechercher un sensor..."
+                data-idx="${i}" data-key="${sec.key}"
+                autocomplete="off" spellcheck="false"
+                value="${curVal}" />
+              <button class="combo-clear" data-idx="${i}" data-key="${sec.key}" title="Effacer">✕</button>
+            </div>
+            <div class="combo-dropdown" data-idx="${i}"></div>
+          </div>
         </div>`;
     }).join('');
 
@@ -121,7 +128,7 @@ class EtageCardEditor extends HTMLElement {
           margin-bottom:7px;
         }
         .enum { font-size:10px; color:#334155; font-weight:700; text-align:right; }
-        .ename, .esel {
+        .ename {
           width:100%; padding:6px 9px;
           background:#111827; border:1px solid #1f2f45;
           color:#e2e8f0; border-radius:7px;
@@ -129,12 +136,57 @@ class EtageCardEditor extends HTMLElement {
           transition:border-color .15s, box-shadow .15s;
         }
         .ename::placeholder { color:#334155; }
-        .ename:focus, .esel:focus {
+        .ename:focus {
           border-color:#38bdf8;
           box-shadow:0 0 0 2px #38bdf822;
         }
-        .esel { cursor:pointer; }
-        option { background:#111827; color:#e2e8f0; }
+
+        /* ── Combobox ── */
+        .combo { position:relative; width:100%; }
+        .combo-display {
+          display:flex; align-items:center;
+          background:#111827; border:1px solid #1f2f45;
+          border-radius:7px; overflow:hidden;
+          transition:border-color .15s, box-shadow .15s;
+        }
+        .combo-display:focus-within {
+          border-color:#38bdf8;
+          box-shadow:0 0 0 2px #38bdf822;
+        }
+        .combo-search {
+          flex:1; padding:6px 9px;
+          background:transparent; border:none;
+          color:#e2e8f0; font-size:12px; outline:none;
+          min-width:0;
+        }
+        .combo-search::placeholder { color:#334155; }
+        .combo-clear {
+          padding:0 8px; background:none; border:none;
+          color:#475569; cursor:pointer; font-size:11px;
+          line-height:1; transition:color .15s; flex-shrink:0;
+        }
+        .combo-clear:hover { color:#f43f5e; }
+        .combo-dropdown {
+          display:none; position:absolute; top:calc(100% + 3px);
+          left:0; right:0; z-index:9999;
+          background:#111827; border:1px solid #38bdf8;
+          border-radius:7px; max-height:180px; overflow-y:auto;
+          scrollbar-width:thin; scrollbar-color:#334155 transparent;
+          box-shadow:0 8px 24px #00000088;
+        }
+        .combo-dropdown::-webkit-scrollbar { width:4px; }
+        .combo-dropdown::-webkit-scrollbar-thumb { background:#334155; border-radius:2px; }
+        .combo-dropdown.open { display:block; }
+        .combo-opt {
+          padding:6px 10px; font-size:11px; color:#94a3b8;
+          cursor:pointer; border-bottom:1px solid #1f2f4544;
+          transition:background .1s, color .1s;
+          white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+        }
+        .combo-opt:last-child { border-bottom:none; }
+        .combo-opt:hover, .combo-opt.selected { background:#1e3a5f; color:#e2e8f0; }
+        .combo-opt.selected { color:#38bdf8; }
+        .combo-none { padding:8px 10px; font-size:11px; color:#475569; font-style:italic; }
       </style>
       <div class="wrap">
         <div class="etabs">${tabsHTML}</div>
@@ -144,13 +196,7 @@ class EtageCardEditor extends HTMLElement {
         </div>
       </div>`;
 
-    /* Fixer les valeurs des selects APRES rendu */
-    this.shadowRoot.querySelectorAll('select.esel').forEach(sel => {
-      const val = (this._config[sel.dataset.key] || [])[parseInt(sel.dataset.idx)] || '';
-      sel.value = val;
-    });
-
-    /* Onglets : seul endroit qui relance _render() */
+    /* ── Onglets ── */
     this.shadowRoot.querySelectorAll('.etab').forEach(btn => {
       btn.addEventListener('click', () => {
         this._tab = parseInt(btn.dataset.i);
@@ -158,29 +204,84 @@ class EtageCardEditor extends HTMLElement {
       });
     });
 
-    /* Labels : on stocke en live dans _config, on dispatche seulement au blur */
+    /* ── Labels : stockage silencieux, dispatch au blur ── */
     this.shadowRoot.querySelectorAll('input.ename').forEach(inp => {
-      // Mise a jour silencieuse a chaque frappe (pas de dispatch = pas de re-render)
       inp.addEventListener('input', () => {
         const key = inp.dataset.key;
         const idx = parseInt(inp.dataset.idx);
         if (!this._config[key]) this._config[key] = [];
         this._config[key][idx] = inp.value;
-        // On ne dispatche PAS ici pour eviter que HA rappelle setConfig
       });
-      // Dispatch uniquement quand l'utilisateur quitte le champ
-      inp.addEventListener('blur', () => {
-        this._dispatch();
+      inp.addEventListener('blur', () => this._dispatch());
+    });
+
+    /* ── Combobox de recherche ── */
+    const allEntities = this._hass ? Object.keys(this._hass.states).sort() : [];
+    const host = this;
+
+    this.shadowRoot.querySelectorAll('.combo-search').forEach(search => {
+      const idx  = parseInt(search.dataset.idx);
+      const key  = search.dataset.key;
+      const drop = this.shadowRoot.querySelector(`.combo-dropdown[data-idx="${idx}"]`);
+
+      const fillDrop = (filter) => {
+        const q = filter.toLowerCase();
+        const matches = allEntities.filter(e => !q || e.toLowerCase().includes(q));
+        if (matches.length === 0) {
+          drop.innerHTML = '<div class="combo-none">Aucun résultat</div>';
+        } else {
+          const cur = (host._config[key] || [])[idx] || '';
+          drop.innerHTML = matches.slice(0, 80).map(e =>
+            `<div class="combo-opt${e === cur ? ' selected' : ''}" data-val="${e}">${e}</div>`
+          ).join('');
+        }
+        drop.classList.add('open');
+      };
+
+      // Frappe → filtre la liste, stockage silencieux de la valeur tapée
+      search.addEventListener('input', () => {
+        fillDrop(search.value);
+      });
+
+      // Focus → ouvre la liste avec filtre actuel
+      search.addEventListener('focus', () => {
+        fillDrop(search.value);
+      });
+
+      // Clic sur une option
+      drop.addEventListener('mousedown', (e) => {
+        const opt = e.target.closest('.combo-opt');
+        if (!opt) return;
+        e.preventDefault(); // empêche le blur avant le clic
+        const val = opt.dataset.val;
+        search.value = val;
+        if (!host._config[key]) host._config[key] = [];
+        host._config[key][idx] = val;
+        drop.classList.remove('open');
+        host._dispatch();
+      });
+
+      // Ferme au blur (sauf si clic sur option géré ci-dessus)
+      search.addEventListener('blur', () => {
+        setTimeout(() => drop.classList.remove('open'), 150);
+        // Si la valeur tapée ne correspond pas à une entité connue, on garde quand même
+        if (!host._config[key]) host._config[key] = [];
+        if (host._config[key][idx] !== search.value) {
+          host._config[key][idx] = search.value;
+          host._dispatch();
+        }
       });
     });
 
-    /* Selects : mise a jour config SANS _render() => liste reste ouverte */
-    this.shadowRoot.querySelectorAll('select.esel').forEach(sel => {
-      sel.addEventListener('change', () => {
-        const key = sel.dataset.key;
-        const idx = parseInt(sel.dataset.idx);
+    /* ── Bouton effacer ── */
+    this.shadowRoot.querySelectorAll('.combo-clear').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx);
+        const key = btn.dataset.key;
+        const search = this.shadowRoot.querySelector(`.combo-search[data-idx="${idx}"][data-key="${key}"]`);
+        if (search) search.value = '';
         if (!this._config[key]) this._config[key] = [];
-        this._config[key][idx] = sel.value;
+        this._config[key][idx] = '';
         this._dispatch();
       });
     });
