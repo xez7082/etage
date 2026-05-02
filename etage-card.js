@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════
-   ÉTAGE CARD — HACS Custom Card v2.0.0
+   ÉTAGE CARD — HACS Custom Card v3.0.0
    Réécriture complète propre
 ═══════════════════════════════════════════ */
 
@@ -353,20 +353,44 @@ class EtageCard extends HTMLElement {
       const val = s ? parseFloat(s.state) : NaN;
       const unit= this._attr(e,'unit_of_measurement') || '°C';
       const col = isNaN(val) ? '#38bdf8' : this._tempColor(val);
-      const pct = isNaN(val) ? 0 : Math.min(100, Math.max(0, ((val-10)/30)*100));
+      const pct = isNaN(val) ? 0 : Math.min(100,Math.max(0,((val-10)/30)*100));
       const nm  = names[i] || e.split('.')[1].replace(/_/g,' ');
-      const humE = (this._config.temperatures_hum||[])[i]||'';
-      const batE = (this._config.temperatures_bat||[])[i]||'';
+      const humE= (this._config.temperatures_hum||[])[i]||'';
+      const batE= (this._config.temperatures_bat||[])[i]||'';
       const xtr = this._extra(e,humE,batE);
-      return `<div class="tcard">
-        <div class="tname">${nm}</div>
-        <div class="tval" style="color:${col}">${isNaN(val)?'—':val.toFixed(1)}<span class="tunit">${unit}</span></div>
-        <div class="tbar"><div class="tfill" style="width:${pct}%;background:${col}"></div></div>
-        ${xtr}
+      const deg = Math.round(-135 + pct * 2.7);
+      const arc = this._arc(pct, col);
+      return `<div class="tcard" style="--col:${col}">
+        <div class="tcard-bg"></div>
+        <div class="tcard-body">
+          <div class="tname">${nm}</div>
+          <div class="tval" style="color:${col}">${isNaN(val)?'—':val.toFixed(1)}<span class="tunit">${unit}</span></div>
+          ${xtr}
+        </div>
+        <div class="tcard-gauge">${arc}</div>
       </div>`;
     }).filter(Boolean).join('');
     if (!items) return '<div class="empty">Aucun capteur configuré</div>';
-    return `<div class="g2">${items}</div>`;
+    return `<div class="g2 gfill">${items}</div>`;
+  }
+
+  _arc(pct, col) {
+    const r = 28, cx = 34, cy = 34, sw = 5;
+    const circ = 2 * Math.PI * r;
+    const angle = -215;
+    const span  = 250;
+    const dash  = (pct / 100) * (span / 360) * circ;
+    const offset= circ * (1 - (span / 360)) / 2;
+    return `<svg viewBox="0 0 68 68" width="68" height="68">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#1e3a5f" stroke-width="${sw}"
+        stroke-dasharray="${(span/360)*circ} ${circ}" stroke-dashoffset="-${offset}"
+        stroke-linecap="round" transform="rotate(${angle} ${cx} ${cy})"/>
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${col}" stroke-width="${sw}"
+        stroke-dasharray="${dash} ${circ}" stroke-dashoffset="-${offset}"
+        stroke-linecap="round" transform="rotate(${angle} ${cx} ${cy})"
+        style="filter:drop-shadow(0 0 4px ${col}88)"/>
+      <text x="${cx}" y="${cy+5}" text-anchor="middle" fill="${col}" font-size="11" font-weight="800">${pct.toFixed(0)}%</text>
+    </svg>`;
   }
 
   _panelFenetres() {
@@ -378,15 +402,17 @@ class EtageCard extends HTMLElement {
       const nm   = names[i] || e.split('.')[1].replace(/_/g,' ');
       const batE = (this._config.fenetres_bat||[])[i]||'';
       const xtr  = this._extra(e,'',batE);
-      return `<div class="wcard ${open?'wopen':''}">
-        ${open ? this._icoWinOpen() : this._icoWinClosed()}
-        <div class="wname">${nm}</div>
-        <div class="wst ${open?'won':'woff'}">${open?'Ouverte':'Fermée'}</div>
-        ${xtr}
+      return `<div class="wcard ${open?'wopen':'wclose'}">
+        <div class="wwin">${open ? this._bigWinOpen() : this._bigWinClosed()}</div>
+        <div class="wfoot">
+          <div class="wname">${nm}</div>
+          <div class="wst ${open?'won':'woff'}">${open?'Ouverte':'Fermée'}</div>
+          ${xtr}
+        </div>
       </div>`;
     }).filter(Boolean).join('');
     if (!items) return '<div class="empty">Aucune fenêtre configurée</div>';
-    return `<div class="g3">${items}</div>`;
+    return `<div class="g3 gfill">${items}</div>`;
   }
 
   _panelPrises() {
@@ -398,14 +424,14 @@ class EtageCard extends HTMLElement {
       const pw  = this._attr(e,'current_power_w') ?? this._attr(e,'power') ?? null;
       const nm  = names[i] || e.split('.')[1].replace(/_/g,' ');
       return `<div class="pcard ${on?'pon':''}" onclick="this.getRootNode().host._toggle('${e}')">
-        ${this._icoPlug(on)}
+        <div class="pring">${this._plugRing(on)}</div>
         <div class="pname">${nm}</div>
-        ${pw!==null?`<div class="ppow">${parseFloat(pw).toFixed(0)}W</div>`:''}
+        ${pw!==null?`<div class="ppow">${parseFloat(pw).toFixed(0)}<span style="font-size:7px">W</span></div>`:''}
         <div class="ppill ${on?'ppillon':'ppilloff'}">${on?'ON':'OFF'}</div>
       </div>`;
     }).filter(Boolean).join('');
     if (!items) return '<div class="empty">Aucune prise configurée</div>';
-    return `<div class="g4">${items}</div>`;
+    return `<div class="g4 gfill">${items}</div>`;
   }
 
   _panelInterrupteurs() {
@@ -416,7 +442,8 @@ class EtageCard extends HTMLElement {
       const on = this._on(e);
       const nm = names[i] || e.split('.')[1].replace(/_/g,' ');
       return `<div class="swcard ${on?'swon':''}" onclick="this.getRootNode().host._toggle('${e}')">
-        ${this._icoBulb(on)}
+        <div class="swglow ${on?'sgon':''}"></div>
+        <div class="swico">${this._bigBulb(on)}</div>
         <div class="swinfo">
           <div class="swname">${nm}</div>
           <div class="swst">${on?'Allumée':'Éteinte'}</div>
@@ -425,7 +452,7 @@ class EtageCard extends HTMLElement {
       </div>`;
     }).filter(Boolean).join('');
     if (!items) return '<div class="empty">Aucun interrupteur configuré</div>';
-    return `<div class="gsw">${items}</div>`;
+    return `<div class="gsw gfill">${items}</div>`;
   }
 
   _panelVolets() {
@@ -438,7 +465,7 @@ class EtageCard extends HTMLElement {
       const nm  = names[i] || e.split('.')[1].replace(/_/g,' ');
       return `<div class="vcard">
         <div class="vhdr"><span class="vname">${nm}</span><span class="vpct">${pct}%</span></div>
-        <div class="vvis">${this._shutterSVG(pct)}</div>
+        <div class="vwin">${this._winScene(pct)}</div>
         <input type="range" class="vslider" min="0" max="100" value="${pct}"
           onchange="this.getRootNode().host._setPos('${e}',+this.value)"
           oninput="this.getRootNode().host._setPos('${e}',+this.value)" />
@@ -450,7 +477,7 @@ class EtageCard extends HTMLElement {
       </div>`;
     }).filter(Boolean).join('');
     if (!items) return '<div class="empty">Aucun volet configuré</div>';
-    return `<div class="gv">${items}</div>`;
+    return `<div class="gv gfill">${items}</div>`;
   }
 
   _panelFumee() {
@@ -465,17 +492,134 @@ class EtageCard extends HTMLElement {
     const humE = (this._config.fumee_hum||[])[0]||'';
     const batE = (this._config.fumee_bat||[])[0]||'';
     const xtr  = this._extra(e,humE,batE);
-    return `<div class="fcenter">
-      <div class="fring ${on?'falarm':'fok'}">
-        ${on ? this._icoSmoke() : this._icoCheck()}
+    return `<div class="fsection">
+      <div class="fbg">${this._fumeeScene(on)}</div>
+      <div class="foverlay">
+        <div class="fring ${on?'falarm':'fok'}">
+          <div class="frings2 ${on?'falarm2':'fok2'}"></div>
+          <div class="frings3 ${on?'falarm3':'fok3'}"></div>
+          ${on ? this._icoSmoke() : this._icoCheck()}
+        </div>
+        <div class="fname">${nm}</div>
+        <div class="fstatus ${on?'falarmtxt':'foktxt'}">${on?'🚨 ALARME DÉTECTÉE !':'✅ Tout est normal'}</div>
+        ${xtr}
+        <div class="fmeta">Dernier changement : ${last}</div>
       </div>
-      <div class="fname">${nm}</div>
-      <div class="fstatus ${on?'falarmtxt':'foktxt'}">${on?'🚨 ALARME DÉTECTÉE !':'✅ Tout est normal'}</div>
-      ${xtr}
-      <div class="fmeta">Dernier changement : ${last}</div>
     </div>`;
   }
 
+  /* ── SVG riches ── */
+  _bigWinOpen() {
+    return `<svg viewBox="0 0 80 90" width="100%" height="100%">
+      <defs>
+        <radialGradient id="sky" cx="50%" cy="30%" r="60%">
+          <stop offset="0%" stop-color="#0ea5e9" stop-opacity=".25"/>
+          <stop offset="100%" stop-color="#0f172a" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <rect x="0" y="0" width="80" height="90" fill="url(#sky)"/>
+      <rect x="4" y="6" width="72" height="78" rx="4" stroke="#38bdf8" stroke-width="2" fill="#0ea5e911"/>
+      <line x1="40" y1="6" x2="40" y2="84" stroke="#38bdf8" stroke-width="1.5" opacity=".6"/>
+      <line x1="4" y1="45" x2="76" y2="45" stroke="#38bdf8" stroke-width="1.5" opacity=".6"/>
+      <circle cx="40" cy="45" r="4" fill="#38bdf8" opacity=".5"/>
+      <line x1="40" y1="2" x2="40" y2="0" stroke="#fbbf24" stroke-width="3" stroke-linecap="round" opacity=".6"/>
+      <line x1="55" y1="10" x2="57" y2="8" stroke="#fbbf24" stroke-width="2" stroke-linecap="round" opacity=".5"/>
+      <line x1="25" y1="10" x2="23" y2="8" stroke="#fbbf24" stroke-width="2" stroke-linecap="round" opacity=".5"/>
+      <circle cx="63" cy="18" r="6" fill="#fbbf24" opacity=".15"/>
+    </svg>`;
+  }
+
+  _bigWinClosed() {
+    return `<svg viewBox="0 0 80 90" width="100%" height="100%">
+      <rect x="4" y="6" width="72" height="78" rx="4" stroke="#334155" stroke-width="2" fill="#0f172a88"/>
+      <line x1="40" y1="6" x2="40" y2="84" stroke="#334155" stroke-width="1.5"/>
+      <line x1="4" y1="45" x2="76" y2="45" stroke="#334155" stroke-width="1.5"/>
+      <rect x="36" y="41" width="8" height="8" rx="2" fill="#334155"/>
+      <circle cx="20" cy="25" r="2" fill="#475569" opacity=".4"/>
+      <circle cx="20" cy="35" r="1.5" fill="#475569" opacity=".3"/>
+      <circle cx="60" cy="30" r="2.5" fill="#475569" opacity=".3"/>
+    </svg>`;
+  }
+
+  _bigBulb(on) {
+    if (on) return `<svg viewBox="0 0 48 48" width="40" height="40" fill="none">
+      <circle cx="24" cy="20" r="16" fill="#fbbf2408" stroke="none"/>
+      <circle cx="24" cy="20" r="11" fill="#fbbf2415"/>
+      <path d="M24 6C17 6 12 11 12 18c0 5 3 9.5 7.5 11.5V32c0 1.1.9 2 2 2h5c1.1 0 2-.9 2-2v-2.5C33 27.5 36 23 36 18c0-7-5-12-12-12z"
+        stroke="#fbbf24" stroke-width="2" fill="#fbbf2422"/>
+      <line x1="20.5" y1="34" x2="27.5" y2="34" stroke="#fbbf24" stroke-width="1.5"/>
+      <line x1="24" y1="2" x2="24" y2="4" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"/>
+      <line x1="34" y1="8" x2="32.5" y2="9.5" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"/>
+      <line x1="14" y1="8" x2="15.5" y2="9.5" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"/>
+      <line x1="38" y1="18" x2="36" y2="18" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"/>
+      <line x1="10" y1="18" x2="12" y2="18" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"/>
+    </svg>`;
+    return `<svg viewBox="0 0 48 48" width="40" height="40" fill="none">
+      <path d="M24 6C17 6 12 11 12 18c0 5 3 9.5 7.5 11.5V32c0 1.1.9 2 2 2h5c1.1 0 2-.9 2-2v-2.5C33 27.5 36 23 36 18c0-7-5-12-12-12z"
+        stroke="#334155" stroke-width="2" fill="#1e293b"/>
+      <line x1="20.5" y1="34" x2="27.5" y2="34" stroke="#334155" stroke-width="1.5"/>
+    </svg>`;
+  }
+
+  _plugRing(on) {
+    const c = on ? '#a78bfa' : '#334155';
+    const glow = on ? `filter:drop-shadow(0 0 6px #a78bfa88)` : '';
+    return `<svg viewBox="0 0 52 52" width="48" height="48" style="${glow}">
+      <circle cx="26" cy="26" r="22" fill="none" stroke="${on?'#a78bfa22':'#1e293b'}" stroke-width="4"/>
+      <circle cx="26" cy="26" r="22" fill="none" stroke="${c}" stroke-width="3"
+        stroke-dasharray="${on?'138 0':'40 98'}" stroke-linecap="round"
+        style="transition:stroke-dasharray .5s"/>
+      <rect x="16" y="8" width="20" height="22" rx="5" stroke="${c}" stroke-width="2" fill="${on?'#4c1d9520':'transparent'}"/>
+      <line x1="20" y1="13" x2="20" y2="20" stroke="${c}" stroke-width="2" stroke-linecap="round"/>
+      <line x1="32" y1="13" x2="32" y2="20" stroke="${c}" stroke-width="2" stroke-linecap="round"/>
+      <line x1="26" y1="30" x2="26" y2="40" stroke="${c}" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="20" y1="40" x2="32" y2="40" stroke="${c}" stroke-width="2.5" stroke-linecap="round"/>
+    </svg>`;
+  }
+
+  _winScene(pct) {
+    const skyBright = Math.round(pct * 2);
+    const opacity   = (pct / 100).toFixed(2);
+    const slats     = 5;
+    const sh        = 5;
+    const gap       = (pct / 100) * ((56 - slats*sh) / (slats-1));
+    let shutterSVG  = '';
+    for (let i=0; i<slats; i++) {
+      const y = 2 + i*(sh+gap);
+      shutterSVG += `<rect x="2" y="${y.toFixed(1)}" width="76" height="${sh}" rx="1.5" fill="#334155" opacity=".9"/>`;
+    }
+    return `<svg viewBox="0 0 80 64" width="100%" height="58">
+      <defs>
+        <linearGradient id="sky${pct}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#0ea5e9" stop-opacity="${(pct*0.006).toFixed(2)}"/>
+          <stop offset="100%" stop-color="#1e3a8a" stop-opacity="${(pct*0.004).toFixed(2)}"/>
+        </linearGradient>
+      </defs>
+      <rect x="0" y="0" width="80" height="64" rx="4" fill="url(#sky${pct})"/>
+      ${pct>40?`<circle cx="60" cy="14" r="${(pct*0.08).toFixed(1)}" fill="#fbbf24" opacity="${(pct/200).toFixed(2)}"/>`:''}
+      ${pct>60?`<line x1="60" y1="2" x2="60" y2="6" stroke="#fbbf24" stroke-width="1.5" opacity=".4"/>
+      <line x1="70" y1="8" x2="72" y2="6" stroke="#fbbf24" stroke-width="1.5" opacity=".4"/>`:''}
+      <rect x="0" y="0" width="80" height="64" rx="4" fill="none" stroke="#1e3a5f" stroke-width="1"/>
+      ${shutterSVG}
+    </svg>`;
+  }
+
+  _fumeeScene(on) {
+    if (on) return `<svg viewBox="0 0 300 200" width="100%" height="100%" style="opacity:.15">
+      <circle cx="150" cy="100" r="80" fill="none" stroke="#f43f5e" stroke-width="2" opacity=".5"/>
+      <circle cx="150" cy="100" r="110" fill="none" stroke="#f43f5e" stroke-width="1.5" opacity=".3"/>
+      <circle cx="150" cy="100" r="140" fill="none" stroke="#f43f5e" stroke-width="1" opacity=".15"/>
+    </svg>`;
+    return `<svg viewBox="0 0 300 200" width="100%" height="100%" style="opacity:.08">
+      ${Array.from({length:20},(_,i)=>{
+        const x=Math.random()*300, y=Math.random()*200, r=Math.random()*2+1;
+        return `<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="${r.toFixed(1)}" fill="#34d399"/>`;
+      }).join('')}
+      <circle cx="150" cy="100" r="60" fill="none" stroke="#34d399" stroke-width="1" opacity=".4"/>
+    </svg>`;
+  }
+
+  /* ── Actions ── */
   /* ── Actions ── */
   _toggle(e) {
     if (!e || !this._hass) return;
@@ -617,8 +761,7 @@ class EtageCard extends HTMLElement {
         color:var(--tc);border-bottom-color:var(--tc);text-shadow:0 0 8px var(--tc)}
       .ticon{font-size:15px;line-height:1}
 
-      /* content */
-      .content{flex:1;overflow:hidden;padding:9px}
+      /* content - géré dans grilles ci-dessous */
 
       /* empty */
       .empty{height:100%;display:flex;align-items:center;justify-content:center;
@@ -630,51 +773,68 @@ class EtageCard extends HTMLElement {
         border:1px solid #1e3a5f;border-radius:99px;padding:2px 7px 2px 5px;font-size:10px}
       .xpill b{font-weight:700}
 
-      /* grilles */
-      .g2{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;align-content:start}
-      .g3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;align-content:start}
-      .g4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;align-content:start}
-      .gsw{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;align-content:start}
-      .gv{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;align-content:start}
+      /* content full height */
+      .content{flex:1;overflow:hidden;padding:9px;display:flex;flex-direction:column}
+
+      /* grilles remplissant l'espace */
+      .gfill{flex:1;height:100%}
+      .g2{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;grid-auto-rows:1fr}
+      .g3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;grid-auto-rows:1fr}
+      .g4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;grid-auto-rows:1fr}
+      .gsw{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;grid-auto-rows:1fr}
+      .gv{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;grid-auto-rows:1fr}
 
       /* température */
-      .tcard{background:#1e293b;border:1px solid #1e3a5f;border-radius:8px;padding:8px 10px}
+      .tcard{position:relative;background:#1e293b;border:1px solid #1e3a5f33;border-radius:10px;
+        padding:10px 12px;overflow:hidden;display:flex;align-items:center;gap:4px;
+        transition:.3s;border-left:3px solid var(--col,#38bdf8)}
+      .tcard:hover{transform:translateY(-1px);box-shadow:0 4px 20px var(--col,#38bdf8)22}
+      .tcard-bg{position:absolute;inset:0;background:radial-gradient(ellipse at 80% 50%,var(--col,#38bdf8)08 0%,transparent 70%);pointer-events:none}
+      .tcard-body{flex:1;min-width:0;position:relative}
+      .tcard-gauge{flex-shrink:0;position:relative;opacity:.9}
       .tname{font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;
-        margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .tval{font-size:20px;font-weight:800;line-height:1;margin-bottom:6px}
+        margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .tval{font-size:22px;font-weight:800;line-height:1;margin-bottom:4px}
       .tunit{font-size:11px;font-weight:400;color:#94a3b8;margin-left:1px}
-      .tbar{background:#0f172a;border-radius:99px;height:4px;overflow:hidden}
-      .tfill{height:100%;border-radius:99px;transition:width .6s,background .6s}
 
       /* fenêtres */
-      .wcard{background:#1e293b;border:1px solid #1e3a5f;border-radius:8px;
-        padding:8px 6px;text-align:center}
-      .wcard.wopen{border-color:#38bdf833;background:#0ea5e908}
-      .wname{font-size:9px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px}
-      .wst{font-size:9px;font-weight:700;margin-top:2px;letter-spacing:.04em}
+      .wcard{background:#1e293b;border:1px solid #1e3a5f33;border-radius:10px;
+        overflow:hidden;display:flex;flex-direction:column;transition:.3s}
+      .wcard.wopen{border-color:#38bdf844;box-shadow:0 0 12px #38bdf811}
+      .wcard.wclose{opacity:.8}
+      .wwin{flex:1;display:flex;align-items:center;justify-content:center;padding:4px;min-height:0}
+      .wfoot{padding:6px 8px;background:#0f172a55;text-align:center}
+      .wname{font-size:9px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .wst{font-size:10px;font-weight:700;margin-top:1px;letter-spacing:.04em}
       .won{color:#38bdf8}.woff{color:#475569}
-      .wcard .xrow{justify-content:center}
+      .wcard .xrow{justify-content:center;margin-top:3px}
 
       /* prises */
-      .pcard{background:#1e293b;border:1px solid #1e3a5f;border-radius:8px;
-        padding:6px 4px;text-align:center;cursor:pointer;transition:.2s;user-select:none}
-      .pcard:hover{background:#1e3a5f44}
-      .pcard.pon{border-color:#a78bfa44;background:#4c1d9511}
+      .pcard{background:#1e293b;border:1px solid #1e3a5f33;border-radius:10px;
+        padding:5px 4px;text-align:center;cursor:pointer;transition:.25s;user-select:none;
+        display:flex;flex-direction:column;align-items:center;justify-content:center}
+      .pcard:hover{transform:scale(1.03)}
+      .pcard.pon{border-color:#a78bfa44;background:#4c1d9518;box-shadow:0 0 14px #a78bfa22}
+      .pring{flex-shrink:0}
       .pname{font-size:9px;color:#64748b;overflow:hidden;text-overflow:ellipsis;
-        white-space:nowrap;margin-top:2px}
-      .ppow{font-size:9px;color:#a78bfa;margin-top:1px}
+        white-space:nowrap;width:100%;margin-top:1px;padding:0 3px}
+      .ppow{font-size:10px;color:#a78bfa;font-weight:700;line-height:1}
       .ppill{font-size:8px;font-weight:700;border-radius:99px;padding:1px 6px;
         display:inline-block;letter-spacing:.05em;margin-top:2px}
       .ppillon{background:#a78bfa33;color:#a78bfa}
-      .ppilloff{background:#1e293b;color:#334155;border:1px solid #334155}
+      .ppilloff{background:#1e293b;color:#334155;border:1px solid #2d3f55}
 
       /* interrupteurs */
-      .swcard{display:flex;align-items:center;gap:8px;background:#1e293b;
-        border:1px solid #1e3a5f;border-radius:8px;padding:7px 10px;
-        cursor:pointer;transition:.2s;user-select:none}
-      .swcard:hover{background:#1e3a5f44}
-      .swcard.swon{border-color:#fbbf2444;background:#78350f11}
-      .swinfo{flex:1;min-width:0}
+      .swcard{position:relative;display:flex;align-items:center;gap:10px;background:#1e293b;
+        border:1px solid #1e3a5f33;border-radius:10px;padding:8px 12px;
+        cursor:pointer;transition:.25s;user-select:none;overflow:hidden}
+      .swcard:hover{transform:translateX(2px)}
+      .swcard.swon{border-color:#fbbf2444;background:#78350f18;box-shadow:0 0 16px #fbbf2415}
+      .swglow{position:absolute;top:50%;left:40px;transform:translateY(-50%);
+        width:60px;height:60px;border-radius:50%;transition:.5s;pointer-events:none}
+      .sgon{background:radial-gradient(circle,#fbbf2415,transparent 70%)}
+      .swico{flex-shrink:0;position:relative}
+      .swinfo{flex:1;min-width:0;position:relative}
       .swname{font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .swst{font-size:9px;color:#64748b;margin-top:1px}
       .swon .swst{color:#fbbf24}
@@ -687,36 +847,44 @@ class EtageCard extends HTMLElement {
       .togon .togthumb{left:20px}.togoff .togthumb{left:3px}
 
       /* volets */
-      .vcard{background:#1e293b;border:1px solid #1e3a5f;border-radius:8px;padding:7px}
-      .vhdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+      .vcard{background:#1e293b;border:1px solid #1e3a5f33;border-radius:10px;
+        padding:7px;display:flex;flex-direction:column;overflow:hidden;transition:.2s}
+      .vcard:hover{border-color:#34d39944}
+      .vhdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-shrink:0}
       .vname{font-size:9px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;
         white-space:nowrap;max-width:75%}
       .vpct{font-size:11px;font-weight:700;color:#34d399}
-      .vvis{background:#0f172a;border-radius:5px;border:1px solid #1e3a5f;
-        margin-bottom:5px;overflow:hidden}
+      .vwin{flex:1;border-radius:6px;overflow:hidden;margin-bottom:5px;min-height:0}
       .vslider{-webkit-appearance:none;width:100%;height:4px;border-radius:2px;
         background:linear-gradient(90deg,#34d399,#0f172a);outline:none;
-        cursor:pointer;margin-bottom:5px}
+        cursor:pointer;margin-bottom:5px;flex-shrink:0}
       .vslider::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;
         border-radius:50%;background:#34d399;box-shadow:0 0 5px #34d39988;cursor:pointer}
-      .vbtns{display:flex;gap:3px}
-      .vb{flex:1;padding:3px;border:1px solid #1e3a5f;background:#0f172a;
-        color:#94a3b8;border-radius:4px;font-size:9px;cursor:pointer;transition:.15s}
+      .vbtns{display:flex;gap:3px;flex-shrink:0}
+      .vb{flex:1;padding:4px;border:1px solid #1e3a5f;background:#0f172a;
+        color:#94a3b8;border-radius:5px;font-size:9px;cursor:pointer;transition:.15s}
       .vb:hover{background:#1e3a5f;color:#e2e8f0}
       .vbstop{color:#fbbf24;border-color:#78350f44}
 
       /* sécurité */
-      .fcenter{display:flex;flex-direction:column;align-items:center;
-        justify-content:center;height:100%;gap:10px}
-      .fring{width:110px;height:110px;border-radius:50%;display:flex;
+      .fsection{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
+      .fbg{position:absolute;inset:0;pointer-events:none}
+      .foverlay{position:relative;display:flex;flex-direction:column;align-items:center;gap:8px;z-index:1}
+      .fring{position:relative;width:120px;height:120px;border-radius:50%;display:flex;
         align-items:center;justify-content:center;transition:.5s}
+      .frings2,.frings3{position:absolute;border-radius:50%;pointer-events:none}
+      .frings2{inset:-14px;border:2px solid currentColor;opacity:.3;animation:ringpulse 2s infinite}
+      .frings3{inset:-28px;border:1px solid currentColor;opacity:.15;animation:ringpulse 2s .4s infinite}
+      @keyframes ringpulse{0%,100%{transform:scale(1);opacity:.3}50%{transform:scale(1.04);opacity:.1}}
       .fok{background:radial-gradient(#064e3b,#0f172a);border:3px solid #34d399;
-        box-shadow:0 0 20px #34d39944}
+        box-shadow:0 0 24px #34d39944;color:#34d399}
+      .fok2,.fok3{color:#34d399}
       .falarm{background:radial-gradient(#450a0a,#0f172a);border:3px solid #f43f5e;
-        box-shadow:0 0 30px #f43f5e88;animation:aringpulse .5s infinite}
-      @keyframes aringpulse{0%,100%{box-shadow:0 0 30px #f43f5e88}50%{box-shadow:0 0 50px #f43f5ecc}}
-      .fname{font-size:12px;font-weight:600;color:#94a3b8}
-      .fstatus{font-size:14px;font-weight:700}
+        box-shadow:0 0 30px #f43f5e88;animation:aringpulse .6s infinite;color:#f43f5e}
+      .falarm2,.falarm3{color:#f43f5e}
+      @keyframes aringpulse{0%,100%{box-shadow:0 0 30px #f43f5e88}50%{box-shadow:0 0 55px #f43f5ecc}}
+      .fname{font-size:13px;font-weight:600;color:#94a3b8}
+      .fstatus{font-size:15px;font-weight:700}
       .foktxt{color:#34d399}.falarmtxt{color:#f43f5e;animation:blink .5s infinite}
       .fmeta{font-size:10px;color:#475569}
     </style>`;
@@ -766,7 +934,7 @@ window.customCards.push({
 });
 
 console.info(
-  '%c ÉTAGE CARD %c v2.0.0 ',
+  '%c ÉTAGE CARD %c v3.0.0 ',
   'background:#0ea5e9;color:#fff;padding:2px 6px;border-radius:3px 0 0 3px;font-weight:bold',
   'background:#1e293b;color:#38bdf8;padding:2px 6px;border-radius:0 3px 3px 0'
 );
