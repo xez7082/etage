@@ -419,40 +419,45 @@ class EtageCard extends HTMLElement {
   _panelTemperatures() {
     const entities = this._config.temperatures || [];
     const names    = this._config.temperatures_names || [];
-    const items = Array.from({ length: 6 }, (_, i) => {
-      const e   = entities[i];
-      const s   = this._state(e);
-      const val = s ? s.state : '—';
-      const unit= this._attr(e,'unit_of_measurement') || '°C';
-      const num = parseFloat(val);
-      const pct = isNaN(num) ? 0 : Math.min(100, Math.max(0, ((num - 10) / 30) * 100));
-      const col = this._tempColor(val);
-      const nm  = names[i] || (e ? e.split('.')[1]?.replace(/_/g,' ') : `Capteur ${i+1}`);
-      return `
-        <div class="temp-card">
+    const items = entities
+      .map((e, i) => ({ e, i }))
+      .filter(({ e }) => e && e !== '')
+      .map(({ e, i }) => {
+        const s   = this._state(e);
+        const val = s ? s.state : '—';
+        const unit= this._attr(e,'unit_of_measurement') || '°C';
+        const num = parseFloat(val);
+        const pct = isNaN(num) ? 0 : Math.min(100, Math.max(0, ((num - 10) / 30) * 100));
+        const col = this._tempColor(val);
+        const nm  = names[i] || e.split('.')[1]?.replace(/_/g,' ');
+        return `<div class="temp-card">
           <div class="temp-name">${nm}</div>
           <div class="temp-val" style="color:${col}">${isNaN(num)?'—':num.toFixed(1)}<span class="unit">${unit}</span></div>
           <div class="temp-bar-bg"><div class="temp-bar" style="width:${pct}%;background:${col}"></div></div>
         </div>`;
-    }).join('');
-    return `<div class="grid-2">${items}</div>`;
+      }).join('');
+    if (!items) return `<div class="empty-panel">Aucun capteur configuré</div>`;
+    return `<div class="grid-auto-2">${items}</div>`;
   }
 
   /* ── Windows panel ── */
   _panelFenetres() {
     const entities = this._config.fenetres || [];
     const names    = this._config.fenetres_names || [];
-    return `<div class="grid-3">${Array.from({ length: 6 }, (_, i) => {
-      const e    = entities[i];
-      const open = this._isOn(e);
-      const nm   = names[i] || (e ? e.split('.')[1]?.replace(/_/g,' ') : `Fenêtre ${i+1}`);
-      return `
-        <div class="window-card ${open?'open':'closed'}">
+    const items = entities
+      .map((e, i) => ({ e, i }))
+      .filter(({ e }) => e && e !== '')
+      .map(({ e, i }) => {
+        const open = this._isOn(e);
+        const nm   = names[i] || e.split('.')[1]?.replace(/_/g,' ');
+        return `<div class="window-card ${open?'open':'closed'}">
           <div class="win-svg">${open ? this._svgWindowOpen() : this._svgWindowClosed()}</div>
           <div class="win-name">${nm}</div>
           <div class="win-status ${open?'status-open':'status-closed'}">${open?'Ouverte':'Fermée'}</div>
         </div>`;
-    }).join('')}</div>`;
+      }).join('');
+    if (!items) return `<div class="empty-panel">Aucune fenêtre configurée</div>`;
+    return `<div class="grid-auto-3">${items}</div>`;
   }
 
   _svgWindowOpen() {
@@ -478,19 +483,22 @@ class EtageCard extends HTMLElement {
   _panelPrises() {
     const entities = this._config.prises || [];
     const names    = this._config.prises_names || [];
-    return `<div class="grid-4">${Array.from({ length: 12 }, (_, i) => {
-      const e   = entities[i];
-      const on  = this._isOn(e);
-      const pw  = this._attr(e, 'current_power_w') ?? this._attr(e, 'power') ?? null;
-      const nm  = names[i] || (e ? e.split('.')[1]?.replace(/_/g,' ') : `Prise ${i+1}`);
-      return `
-        <div class="prise-card ${on?'on':'off'}" onclick="this.getRootNode().host._toggle('${e||''}')">
+    const items = entities
+      .map((e, i) => ({ e, i }))
+      .filter(({ e }) => e && e !== '')
+      .map(({ e, i }) => {
+        const on  = this._isOn(e);
+        const pw  = this._attr(e, 'current_power_w') ?? this._attr(e, 'power') ?? null;
+        const nm  = names[i] || e.split('.')[1]?.replace(/_/g,' ');
+        return `<div class="prise-card ${on?'on':'off'}" onclick="this.getRootNode().host._toggle('${e}')">
           <div class="prise-icon">${this._svgPlug(on)}</div>
           <div class="prise-name">${nm}</div>
           ${pw!==null?`<div class="prise-power">${parseFloat(pw).toFixed(0)}W</div>`:''}
           <div class="toggle-pill ${on?'pill-on':'pill-off'}">${on?'ON':'OFF'}</div>
         </div>`;
-    }).join('')}</div>`;
+      }).join('');
+    if (!items) return `<div class="empty-panel">Aucune prise configurée</div>`;
+    return `<div class="grid-auto-4">${items}</div>`;
   }
 
   _svgPlug(on) {
@@ -508,22 +516,23 @@ class EtageCard extends HTMLElement {
   _panelInterrupteurs() {
     const entities = this._config.interrupteurs || [];
     const names    = this._config.interrupteurs_names || [];
-    return `<div class="grid-sw">${Array.from({ length: 7 }, (_, i) => {
-      const e   = entities[i];
-      const on  = this._isOn(e);
-      const nm  = names[i] || (e ? e.split('.')[1]?.replace(/_/g,' ') : `Lumière ${i+1}`);
-      return `
-        <div class="sw-card ${on?'sw-on':'sw-off'}" onclick="this.getRootNode().host._toggle('${e||''}')">
+    const items = entities
+      .map((e, i) => ({ e, i }))
+      .filter(({ e }) => e && e !== '')
+      .map(({ e, i }) => {
+        const on  = this._isOn(e);
+        const nm  = names[i] || e.split('.')[1]?.replace(/_/g,' ');
+        return `<div class="sw-card ${on?'sw-on':'sw-off'}" onclick="this.getRootNode().host._toggle('${e}')">
           <div class="sw-bulb">${this._svgBulb(on)}</div>
           <div class="sw-info">
             <div class="sw-name">${nm}</div>
             <div class="sw-state">${on?'Allumée':'Éteinte'}</div>
           </div>
-          <div class="sw-toggle ${on?'tog-on':'tog-off'}">
-            <div class="tog-thumb"></div>
-          </div>
+          <div class="sw-toggle ${on?'tog-on':'tog-off'}"><div class="tog-thumb"></div></div>
         </div>`;
-    }).join('')}</div>`;
+      }).join('');
+    if (!items) return `<div class="empty-panel">Aucun interrupteur configuré</div>`;
+    return `<div class="grid-sw-2">${items}</div>`;
   }
 
   _svgBulb(on) {
@@ -544,36 +553,33 @@ class EtageCard extends HTMLElement {
   _panelVolets() {
     const entities = this._config.volets || [];
     const names    = this._config.volets_names || [];
-    return `<div class="grid-vol">${Array.from({ length: 6 }, (_, i) => {
-      const e    = entities[i];
-      const s    = this._state(e);
-      const pos  = this._attr(e,'current_position') ?? 50;
-      const st   = s?.state || 'unknown';
-      const nm   = names[i] || (e ? e.split('.')[1]?.replace(/_/g,' ') : `Volet ${i+1}`);
-      const pct  = Math.round(pos);
-      return `
-        <div class="vol-card">
+    const items = entities
+      .map((e, i) => ({ e, i }))
+      .filter(({ e }) => e && e !== '')
+      .map(({ e, i }) => {
+        const pos  = this._attr(e,'current_position') ?? 50;
+        const nm   = names[i] || e.split('.')[1]?.replace(/_/g,' ');
+        const pct  = Math.round(pos);
+        return `<div class="vol-card">
           <div class="vol-header">
             <div class="vol-name">${nm}</div>
             <div class="vol-pct">${pct}%</div>
           </div>
-          <div class="vol-visual">
-            <div class="vol-frame">
-              ${this._renderShutter(pct)}
-            </div>
-          </div>
+          <div class="vol-visual"><div class="vol-frame">${this._renderShutter(pct)}</div></div>
           <div class="vol-slider-wrap">
             <input type="range" min="0" max="100" value="${pct}" class="vol-slider"
-              oninput="this.getRootNode().host._setPosition('${e||''}',parseInt(this.value))"
-              onchange="this.getRootNode().host._setPosition('${e||''}',parseInt(this.value))"/>
+              oninput="this.getRootNode().host._setPosition('${e}',parseInt(this.value))"
+              onchange="this.getRootNode().host._setPosition('${e}',parseInt(this.value))"/>
           </div>
           <div class="vol-btns">
-            <button class="vbtn up"   onclick="this.getRootNode().host._coverCmd('${e||''}','open_cover')">▲</button>
-            <button class="vbtn stop" onclick="this.getRootNode().host._coverCmd('${e||''}','stop_cover')">■</button>
-            <button class="vbtn down" onclick="this.getRootNode().host._coverCmd('${e||''}','close_cover')">▼</button>
+            <button class="vbtn up"   onclick="this.getRootNode().host._coverCmd('${e}','open_cover')">▲</button>
+            <button class="vbtn stop" onclick="this.getRootNode().host._coverCmd('${e}','stop_cover')">■</button>
+            <button class="vbtn down" onclick="this.getRootNode().host._coverCmd('${e}','close_cover')">▼</button>
           </div>
         </div>`;
-    }).join('')}</div>`;
+      }).join('');
+    if (!items) return `<div class="empty-panel">Aucun volet configuré</div>`;
+    return `<div class="grid-auto-3">${items}</div>`;
   }
 
   _renderShutter(pct) {
@@ -654,13 +660,13 @@ class EtageCard extends HTMLElement {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 10px 16px 8px;
+        padding: 7px 14px 6px;
         background: linear-gradient(90deg, #0f172a, #1e293b);
         border-bottom: 1px solid #1e3a5f;
         flex-shrink: 0;
       }
-      .title { font-size:14px; font-weight:700; letter-spacing:.08em; color:#f8fafc; }
-      .subtitle { font-size:10px; color:#64748b; margin-top:1px; }
+      .title { font-size:13px; font-weight:700; letter-spacing:.08em; color:#f8fafc; }
+      .subtitle { font-size:9px; color:#64748b; margin-top:1px; }
       .live-dot { width:7px; height:7px; border-radius:50%; background:#34d399;
         box-shadow:0 0 6px #34d399; animation:pulse 2s infinite; }
       @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
@@ -668,8 +674,8 @@ class EtageCard extends HTMLElement {
       /* ── Barre de statut ── */
       .statusbar {
         display: flex;
-        gap: 6px;
-        padding: 6px 12px;
+        gap: 5px;
+        padding: 4px 10px;
         background: #060d1a;
         border-bottom: 1px solid #1e3a5f;
         flex-shrink: 0;
@@ -701,7 +707,7 @@ class EtageCard extends HTMLElement {
       .tabs {
         display: flex;
         gap: 2px;
-        padding: 8px 10px 0;
+        padding: 5px 8px 0;
         background: #0f172a;
         flex-shrink: 0;
         overflow-x: auto;
@@ -710,12 +716,12 @@ class EtageCard extends HTMLElement {
       .tabs::-webkit-scrollbar { display:none; }
       .tab {
         display: flex; flex-direction: column; align-items: center;
-        gap: 1px; padding: 5px 8px 6px;
+        gap: 1px; padding: 4px 7px 5px;
         background: #1e293b; border: 1px solid #1e3a5f44;
-        border-radius: 8px 8px 0 0; cursor: pointer;
+        border-radius: 7px 7px 0 0; cursor: pointer;
         font-size: 9px; color: #64748b; font-weight:600;
         letter-spacing:.04em; text-transform:uppercase;
-        transition: all .2s; white-space:nowrap; min-width:52px;
+        transition: all .2s; white-space:nowrap; min-width:48px;
         border-bottom:2px solid transparent;
       }
       .tab:hover { background:#1e3a5f; color:#94a3b8; }
@@ -731,48 +737,54 @@ class EtageCard extends HTMLElement {
       /* ── Content ── */
       .content {
         flex: 1;
-        overflow-y: auto;
-        padding: 12px;
-        scrollbar-width: thin;
-        scrollbar-color: #334155 transparent;
+        overflow: hidden;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
       }
-      .content::-webkit-scrollbar { width:5px; }
-      .content::-webkit-scrollbar-thumb { background:#334155; border-radius:3px; }
+
+      /* ── Grilles auto ── */
+      .grid-auto-2 { display:grid; grid-template-columns:repeat(2,1fr); gap:7px; align-content:start; }
+      .grid-auto-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; align-content:start; }
+      .grid-auto-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; align-content:start; }
+      .grid-sw-2   { display:grid; grid-template-columns:repeat(2,1fr); gap:6px; align-content:start; }
+
+      .empty-panel {
+        flex:1; display:flex; align-items:center; justify-content:center;
+        color:#334155; font-size:12px; font-style:italic;
+      }
 
       /* ── Temperature ── */
-      .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
       .temp-card {
-        background:#1e293b; border:1px solid #1e3a5f; border-radius:10px;
-        padding:10px 12px; transition:.2s;
+        background:#1e293b; border:1px solid #1e3a5f; border-radius:8px;
+        padding:8px 10px; transition:.2s;
       }
-      .temp-card:hover { border-color:#38bdf855; transform:translateY(-1px); }
-      .temp-name { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .temp-val { font-size:24px; font-weight:800; line-height:1; margin-bottom:8px; }
-      .unit { font-size:13px; font-weight:400; color:#94a3b8; margin-left:1px; }
-      .temp-bar-bg { background:#0f172a; border-radius:99px; height:5px; overflow:hidden; }
+      .temp-card:hover { border-color:#38bdf855; }
+      .temp-name { font-size:9px; color:#64748b; text-transform:uppercase; letter-spacing:.06em; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .temp-val { font-size:20px; font-weight:800; line-height:1; margin-bottom:6px; }
+      .unit { font-size:11px; font-weight:400; color:#94a3b8; margin-left:1px; }
+      .temp-bar-bg { background:#0f172a; border-radius:99px; height:4px; overflow:hidden; }
       .temp-bar { height:100%; border-radius:99px; transition:width .6s ease, background .6s; }
 
       /* ── Windows ── */
-      .grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
       .window-card {
-        background:#1e293b; border-radius:10px; padding:10px 8px;
+        background:#1e293b; border-radius:8px; padding:8px 6px;
         text-align:center; border:1px solid #1e3a5f; transition:.2s;
       }
       .window-card.open { border-color:#38bdf855; background:#0ea5e908; }
-      .win-svg { display:flex; justify-content:center; margin-bottom:6px; }
-      .win-name { font-size:10px; color:#94a3b8; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; }
-      .win-status { font-size:10px; font-weight:700; margin-top:3px; letter-spacing:.05em; }
+      .win-svg { display:flex; justify-content:center; margin-bottom:4px; }
+      .win-name { font-size:9px; color:#94a3b8; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; }
+      .win-status { font-size:9px; font-weight:700; margin-top:2px; letter-spacing:.04em; }
       .status-open { color:#38bdf8; text-shadow:0 0 6px #38bdf855; }
       .status-closed { color:#475569; }
 
       /* ── Prises ── */
-      .grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:7px; }
       .prise-card {
-        background:#1e293b; border:1px solid #1e3a5f; border-radius:10px;
-        padding:8px 6px; text-align:center; cursor:pointer; transition:.2s;
+        background:#1e293b; border:1px solid #1e3a5f; border-radius:8px;
+        padding:6px 4px; text-align:center; cursor:pointer; transition:.2s;
         user-select:none;
       }
-      .prise-card:hover { transform:translateY(-2px); }
+      .prise-card:hover { background:#1e3a5f44; }
       .prise-card.on { border-color:#a78bfa55; background:#4c1d9511; }
       .prise-card.on .prise-name { color:#c4b5fd; }
       .prise-icon { display:flex; justify-content:center; margin-bottom:4px; }
@@ -783,18 +795,17 @@ class EtageCard extends HTMLElement {
       .pill-off { background:#1e293b; color:#334155; border:1px solid #334155; }
 
       /* ── Interrupteurs ── */
-      .grid-sw { display:flex; flex-direction:column; gap:7px; }
       .sw-card {
-        display:flex; align-items:center; gap:12px;
-        background:#1e293b; border:1px solid #1e3a5f; border-radius:10px;
-        padding:10px 14px; cursor:pointer; transition:.2s; user-select:none;
+        display:flex; align-items:center; gap:8px;
+        background:#1e293b; border:1px solid #1e3a5f; border-radius:8px;
+        padding:7px 10px; cursor:pointer; transition:.2s; user-select:none;
       }
-      .sw-card:hover { transform:translateX(2px); }
+      .sw-card:hover { background:#1e3a5f44; }
       .sw-card.sw-on { border-color:#fbbf2444; background:#78350f11; }
       .sw-bulb { flex-shrink:0; }
       .sw-info { flex:1; min-width:0; }
-      .sw-name { font-size:12px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-      .sw-state { font-size:10px; color:#64748b; margin-top:1px; }
+      .sw-name { font-size:11px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .sw-state { font-size:9px; color:#64748b; margin-top:1px; }
       .sw-on .sw-state { color:#fbbf24; }
       .sw-toggle {
         width:38px; height:20px; border-radius:99px; position:relative;
@@ -810,17 +821,16 @@ class EtageCard extends HTMLElement {
       .tog-off .tog-thumb { left:3px; }
 
       /* ── Volets ── */
-      .grid-vol { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
       .vol-card {
-        background:#1e293b; border:1px solid #1e3a5f; border-radius:10px;
-        padding:8px; transition:.2s;
+        background:#1e293b; border:1px solid #1e3a5f; border-radius:8px;
+        padding:7px; transition:.2s;
       }
-      .vol-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; }
-      .vol-name { font-size:10px; color:#94a3b8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:75%; }
-      .vol-pct { font-size:12px; font-weight:700; color:#34d399; }
+      .vol-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+      .vol-name { font-size:9px; color:#94a3b8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:75%; }
+      .vol-pct { font-size:11px; font-weight:700; color:#34d399; }
       .vol-visual {
-        background:#0f172a; border-radius:6px; height:48px;
-        position:relative; overflow:hidden; margin-bottom:6px;
+        background:#0f172a; border-radius:5px; height:38px;
+        position:relative; overflow:hidden; margin-bottom:5px;
         border:1px solid #1e3a5f;
       }
       .vol-frame { position:absolute; inset:4px; }
