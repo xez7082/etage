@@ -690,7 +690,7 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'etage-card',
   name: 'Étage',
-  description: 'Tableau de bord de l'étage : fenêtres, températures, prises, lumières, volets & détecteur fumée',
+  description: "Tableau de bord de l'étage : fenêtres, températures, prises, lumières, volets & détecteur fumée",
   preview: true,
   documentationURL: 'https://github.com/ton-user/etage-card',
 });
