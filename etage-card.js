@@ -23,12 +23,30 @@ class EtageCardEditor extends HTMLElement {
     if (wasNull) this._render();
   }
 
+  _normalize(cfg) {
+    // Remplace les "trous" de tableaux creux par des chaînes vides
+    // pour que la comparaison avec le config venant de HA soit stable.
+    const out = JSON.parse(JSON.stringify(cfg));
+    ['temperatures','fenetres','prises','interrupteurs','volets','fumee'].forEach(k => {
+      if (Array.isArray(out[k])) {
+        for (let i = 0; i < out[k].length; i++) {
+          if (out[k][i] === undefined || out[k][i] === null) out[k][i] = '';
+        }
+      }
+      const nk = k + '_names';
+      if (Array.isArray(out[nk])) {
+        for (let i = 0; i < out[nk].length; i++) {
+          if (out[nk][i] === undefined || out[nk][i] === null) out[nk][i] = '';
+        }
+      }
+    });
+    return out;
+  }
+
   setConfig(config) {
-    // HA rappelle setConfig() apres chaque config-changed dispatche.
-    // On compare pour eviter de detruire le DOM pendant l'edition.
-    const incoming = JSON.stringify(config);
-    if (incoming === JSON.stringify(this._config)) return;
-    this._config = JSON.parse(incoming);
+    const incoming = JSON.stringify(this._normalize(config));
+    if (incoming === JSON.stringify(this._normalize(this._config))) return;
+    this._config = this._normalize(config);
     this._render();
   }
 
@@ -45,7 +63,7 @@ class EtageCardEditor extends HTMLElement {
 
   _dispatch() {
     this.dispatchEvent(new CustomEvent('config-changed', {
-      detail: { config: this._config },
+      detail: { config: this._normalize(this._config) },
       bubbles: true, composed: true,
     }));
   }
@@ -647,6 +665,38 @@ class EtageCard extends HTMLElement {
         box-shadow:0 0 6px #34d399; animation:pulse 2s infinite; }
       @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 
+      /* ── Barre de statut ── */
+      .statusbar {
+        display: flex;
+        gap: 6px;
+        padding: 6px 12px;
+        background: #060d1a;
+        border-bottom: 1px solid #1e3a5f;
+        flex-shrink: 0;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+      .statusbar::-webkit-scrollbar { display:none; }
+      .chip {
+        display: flex; align-items: center; gap: 4px;
+        padding: 3px 8px 3px 6px;
+        border: 1px solid #1e3a5f;
+        border-radius: 99px;
+        font-size: 11px; font-weight: 600;
+        white-space: nowrap; flex-shrink: 0;
+        transition: .2s;
+      }
+      .chip-alarm {
+        border-color: #f43f5e55 !important;
+        color: #f43f5e !important;
+        animation: alarm-chip .6s infinite;
+      }
+      @keyframes alarm-chip { 0%,100%{opacity:1} 50%{opacity:.5} }
+      .chip-ico { font-size:12px; line-height:1; }
+      .chip-val { font-weight:700; font-size:12px; }
+      .chip-tot { font-size:9px; font-weight:400; opacity:.5; }
+      .chip-lbl { font-size:9px; font-weight:400; opacity:.7; }
+
       /* ── Tabs ── */
       .tabs {
         display: flex;
@@ -819,6 +869,51 @@ class EtageCard extends HTMLElement {
     </style>`;
   }
 
+  /* ── Compteurs pour la barre de statut ── */
+  _statusBar() {
+    const count = (list, fn) => (list || []).filter(e => e && fn(e)).length;
+    const total = (list) => (list || []).filter(e => e).length;
+
+    const lum   = this._config.interrupteurs || [];
+    const fenE  = this._config.fenetres      || [];
+    const prE   = this._config.prises        || [];
+    const volE  = this._config.volets        || [];
+    const fumE  = this._config.fumee         || [];
+
+    const lumOn    = count(lum,  e => this._isOn(e));
+    const lumTot   = total(lum);
+    const fenOpen  = count(fenE, e => this._isOn(e));
+    const fenTot   = total(fenE);
+    const prOn     = count(prE,  e => this._isOn(e));
+    const prTot    = total(prE);
+    const volOpen  = count(volE, e => { const s = this._state(e); return s && s.state === 'open'; });
+    const volTot   = total(volE);
+    const fumAlarm = count(fumE, e => this._isOn(e));
+
+    const chip = (icon, val, tot, colorOn, colorOff, label) => {
+      const active = val > 0;
+      const col = active ? colorOn : colorOff;
+      return `<div class="chip" style="border-color:${col}22;color:${active?col:'#475569'}">
+        <span class="chip-ico">${icon}</span>
+        <span class="chip-val">${val}<span class="chip-tot">/${tot}</span></span>
+        <span class="chip-lbl">${label}</span>
+      </div>`;
+    };
+
+    const fumChip = fumAlarm > 0
+      ? `<div class="chip chip-alarm"><span class="chip-ico">🔥</span><span class="chip-val">ALERTE</span></div>`
+      : `<div class="chip" style="border-color:#34d39922;color:#34d399"><span class="chip-ico">🔥</span><span class="chip-val" style="font-size:9px">OK</span></div>`;
+
+    return `
+      <div class="statusbar">
+        ${chip('💡', lumOn,   lumTot,  '#fbbf24', '#334155', lumOn===1?'allumée':'allumées')}
+        ${chip('🪟', fenOpen, fenTot,  '#38bdf8', '#334155', fenOpen===1?'ouverte':'ouvertes')}
+        ${chip('🔌', prOn,    prTot,   '#a78bfa', '#334155', prOn===1?'active':'actives')}
+        ${chip('🏠', volOpen, volTot,  '#34d399', '#334155', volOpen===1?'ouvert':'ouverts')}
+        ${fumChip}
+      </div>`;
+  }
+
   /* ── Main render ── */
   _render() {
     const tab = this._tabs[this._tab];
@@ -841,6 +936,7 @@ class EtageCard extends HTMLElement {
           </div>
           <div class="live-dot"></div>
         </div>
+        ${this._statusBar()}
         <div class="tabs">${this._renderTabs()}</div>
         <div class="content">${(panels[tab.key] || (() => '<p>—</p>'))()}</div>
       </div>`;
