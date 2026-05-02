@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════
-   ÉTAGE CARD — HACS Custom Card v3.0.0
+   ÉTAGE CARD — HACS Custom Card v4.0.0
    Réécriture complète propre
 ═══════════════════════════════════════════ */
 
@@ -256,6 +256,7 @@ class EtageCard extends HTMLElement {
     this._hass   = null;
     this._tab    = 0;
     this.attachShadow({ mode: 'open' });
+    this._history = {};   // cache historique par entité
     this._tabs = [
       { key:'temperatures',  label:'Températures', icon:'🌡️', color:'#f97316' },
       { key:'fenetres',      label:'Fenêtres',     icon:'🪟', color:'#38bdf8' },
@@ -267,7 +268,12 @@ class EtageCard extends HTMLElement {
   }
 
   setConfig(config) { this._config = config || {}; this._render(); }
-  set hass(h)       { this._hass = h; this._render(); }
+  set hass(h) {
+    const wasNull = !this._hass;
+    this._hass = h;
+    this._render();
+    if (wasNull) this._loadHistory();
+  }
   getCardSize()     { return 5; }
 
   static getConfigElement() { return document.createElement('etage-card-editor'); }
@@ -277,6 +283,96 @@ class EtageCard extends HTMLElement {
   _st(e)     { return (e && this._hass) ? (this._hass.states[e] || null) : null; }
   _attr(e,a) { const s=this._st(e); return s ? (s.attributes?.[a] ?? null) : null; }
   _on(e)     { const s=this._st(e); return s ? ['on','open','true','locked'].includes(s.state) : false; }
+
+  /* ── Chargement historique ── */
+  _loadHistory() {
+    const ents = (this._config.temperatures || []).filter(e => e);
+    if (!ents.length || !this._hass) return;
+    const end   = new Date();
+    const start = new Date(end - 8 * 3600 * 1000); // 8 heures
+    const ids   = ents.join(',');
+    const url   = `history/period/${start.toISOString()}?filter_entity_id=${ids}&minimal_response=true&no_attributes=true`;
+    this._hass.callApi('GET', url).then(data => {
+      if (!Array.isArray(data)) return;
+      data.forEach(series => {
+        if (!series.length) return;
+        const eid = series[0].entity_id || ents[0];
+        // Découper en 8 tranches d'une heure et faire la moyenne
+        const buckets = Array.from({length:8}, (_,i) => {
+          const t0 = start.getTime() + i * 3600000;
+          const t1 = t0 + 3600000;
+          const vals = series
+            .filter(p => { const t=new Date(p.last_changed||p.lu).getTime(); return t>=t0 && t<t1; })
+            .map(p => parseFloat(p.state))
+            .filter(v => !isNaN(v));
+          return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+        });
+        this._history[eid] = buckets;
+      });
+      this._render();
+    }).catch(() => {});
+  }
+
+  /* ── Thermomètre SVG vertical ── */
+  _thermometer(val, col) {
+    const pct  = isNaN(val) ? 0 : Math.min(100, Math.max(0, ((val-10)/30)*100));
+    const tubeH = 44;
+    const fillH = Math.round((pct/100) * tubeH);
+    const fillY = 6 + (tubeH - fillH);
+    return `<svg viewBox="0 0 22 72" width="22" height="72">
+      <defs>
+        <linearGradient id="thfill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${col}" stop-opacity=".9"/>
+          <stop offset="100%" stop-color="${col}"/>
+        </linearGradient>
+        <clipPath id="thclip">
+          <rect x="5" y="6" width="12" height="${tubeH}" rx="5"/>
+        </clipPath>
+      </defs>
+      <!-- tube fond -->
+      <rect x="5" y="6" width="12" height="${tubeH}" rx="5" fill="#0f172a" stroke="#1e3a5f" stroke-width="1.2"/>
+      <!-- remplissage -->
+      <rect x="5" y="${fillY}" width="12" height="${fillH}" rx="5" fill="url(#thfill)" clip-path="url(#thclip)"
+        style="filter:drop-shadow(0 0 3px ${col}99)"/>
+      <!-- bulbe -->
+      <circle cx="11" cy="57" r="9" fill="${col}" style="filter:drop-shadow(0 0 5px ${col}88)"/>
+      <circle cx="11" cy="57" r="5.5" fill="${col}" opacity=".6"/>
+      <!-- graduation -->
+      <line x1="17" y1="17" x2="19" y2="17" stroke="#334155" stroke-width="1"/>
+      <line x1="17" y1="28" x2="19" y2="28" stroke="#334155" stroke-width="1"/>
+      <line x1="17" y1="39" x2="19" y2="39" stroke="#334155" stroke-width="1"/>
+      <line x1="17" y1="50" x2="19" y2="50" stroke="#334155" stroke-width="1"/>
+    </svg>`;
+  }
+
+  /* ── Mini graphique en barres ── */
+  _miniBars(eid, col) {
+    const data = this._history[eid];
+    if (!data || !data.some(v=>v!==null)) return '';
+    const vals   = data.map(v => v ?? 0);
+    const minV   = Math.min(...vals.filter(v=>v>0));
+    const maxV   = Math.max(...vals);
+    const range  = maxV - minV || 1;
+    const W = 8, G = 2, H = 24;
+    const bars = vals.map((v, i) => {
+      if (v === 0 && data[i] === null) {
+        return `<rect x="${i*(W+G)}" y="0" width="${W}" height="${H}" rx="2" fill="#1e3a5f" opacity=".4"/>`;
+      }
+      const h   = Math.max(4, Math.round(((v - minV) / range) * H));
+      const bCol = this._tempColor(v);
+      const now  = i === vals.length - 1;
+      return `<rect x="${i*(W+G)}" y="${H-h}" width="${W}" height="${h}" rx="2"
+        fill="${bCol}" opacity="${now?'1':'0.55'}"
+        ${now?`style="filter:drop-shadow(0 0 3px ${bCol}88)"`:''}/>`;
+    }).join('');
+    const labelW = (W+G)*8 - G;
+    return `<div class="mbars-wrap">
+      <svg viewBox="0 ${0} ${labelW} ${H}" width="100%" height="${H}" style="overflow:visible">
+        ${bars}
+      </svg>
+      <div class="mbars-legend"><span>-8h</span><span>maintenant</span></div>
+    </div>`;
+  }
 
   _tempColor(v) {
     if (v < 15) return '#60a5fa';
@@ -353,44 +449,25 @@ class EtageCard extends HTMLElement {
       const val = s ? parseFloat(s.state) : NaN;
       const unit= this._attr(e,'unit_of_measurement') || '°C';
       const col = isNaN(val) ? '#38bdf8' : this._tempColor(val);
-      const pct = isNaN(val) ? 0 : Math.min(100,Math.max(0,((val-10)/30)*100));
       const nm  = names[i] || e.split('.')[1].replace(/_/g,' ');
       const humE= (this._config.temperatures_hum||[])[i]||'';
       const batE= (this._config.temperatures_bat||[])[i]||'';
       const xtr = this._extra(e,humE,batE);
-      const deg = Math.round(-135 + pct * 2.7);
-      const arc = this._arc(pct, col);
+      const thermo = this._thermometer(val, col);
+      const bars   = this._miniBars(e, col);
       return `<div class="tcard" style="--col:${col}">
         <div class="tcard-bg"></div>
+        <div class="tcard-thermo">${thermo}</div>
         <div class="tcard-body">
           <div class="tname">${nm}</div>
           <div class="tval" style="color:${col}">${isNaN(val)?'—':val.toFixed(1)}<span class="tunit">${unit}</span></div>
           ${xtr}
+          ${bars}
         </div>
-        <div class="tcard-gauge">${arc}</div>
       </div>`;
     }).filter(Boolean).join('');
     if (!items) return '<div class="empty">Aucun capteur configuré</div>';
     return `<div class="g2 gfill">${items}</div>`;
-  }
-
-  _arc(pct, col) {
-    const r = 28, cx = 34, cy = 34, sw = 5;
-    const circ = 2 * Math.PI * r;
-    const angle = -215;
-    const span  = 250;
-    const dash  = (pct / 100) * (span / 360) * circ;
-    const offset= circ * (1 - (span / 360)) / 2;
-    return `<svg viewBox="0 0 68 68" width="68" height="68">
-      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#1e3a5f" stroke-width="${sw}"
-        stroke-dasharray="${(span/360)*circ} ${circ}" stroke-dashoffset="-${offset}"
-        stroke-linecap="round" transform="rotate(${angle} ${cx} ${cy})"/>
-      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${col}" stroke-width="${sw}"
-        stroke-dasharray="${dash} ${circ}" stroke-dashoffset="-${offset}"
-        stroke-linecap="round" transform="rotate(${angle} ${cx} ${cy})"
-        style="filter:drop-shadow(0 0 4px ${col}88)"/>
-      <text x="${cx}" y="${cy+5}" text-anchor="middle" fill="${col}" font-size="11" font-weight="800">${pct.toFixed(0)}%</text>
-    </svg>`;
   }
 
   _panelFenetres() {
@@ -707,7 +784,7 @@ class EtageCard extends HTMLElement {
         <span class="tlabel">${t.label}</span>
       </button>`).join('');
   }
-  _setTab(i) { this._tab = i; this._render(); }
+  _setTab(i) { this._tab = i; this._render(); if (i===0) this._loadHistory(); }
 
   /* ── CSS ── */
   _css() {
@@ -786,16 +863,19 @@ class EtageCard extends HTMLElement {
 
       /* température */
       .tcard{position:relative;background:#1e293b;border:1px solid #1e3a5f33;border-radius:10px;
-        padding:10px 12px;overflow:hidden;display:flex;align-items:center;gap:4px;
+        padding:10px 10px 8px 10px;overflow:hidden;display:flex;align-items:stretch;gap:8px;
         transition:.3s;border-left:3px solid var(--col,#38bdf8)}
       .tcard:hover{transform:translateY(-1px);box-shadow:0 4px 20px var(--col,#38bdf8)22}
-      .tcard-bg{position:absolute;inset:0;background:radial-gradient(ellipse at 80% 50%,var(--col,#38bdf8)08 0%,transparent 70%);pointer-events:none}
-      .tcard-body{flex:1;min-width:0;position:relative}
-      .tcard-gauge{flex-shrink:0;position:relative;opacity:.9}
+      .tcard-bg{position:absolute;inset:0;background:radial-gradient(ellipse at 10% 50%,var(--col,#38bdf8)08 0%,transparent 60%);pointer-events:none}
+      .tcard-thermo{flex-shrink:0;display:flex;align-items:center;position:relative}
+      .tcard-body{flex:1;min-width:0;position:relative;display:flex;flex-direction:column;justify-content:space-between}
       .tname{font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;
-        margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .tval{font-size:22px;font-weight:800;line-height:1;margin-bottom:4px}
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .tval{font-size:22px;font-weight:800;line-height:1;margin:2px 0}
       .tunit{font-size:11px;font-weight:400;color:#94a3b8;margin-left:1px}
+      /* mini barres */
+      .mbars-wrap{margin-top:4px}
+      .mbars-legend{display:flex;justify-content:space-between;font-size:7px;color:#334155;margin-top:1px}
 
       /* fenêtres */
       .wcard{background:#1e293b;border:1px solid #1e3a5f33;border-radius:10px;
@@ -934,7 +1014,7 @@ window.customCards.push({
 });
 
 console.info(
-  '%c ÉTAGE CARD %c v3.0.0 ',
+  '%c ÉTAGE CARD %c v4.0.0 ',
   'background:#0ea5e9;color:#fff;padding:2px 6px;border-radius:3px 0 0 3px;font-weight:bold',
   'background:#1e293b;color:#38bdf8;padding:2px 6px;border-radius:0 3px 3px 0'
 );
