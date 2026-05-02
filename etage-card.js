@@ -6,116 +6,171 @@
  */
 
 /* ═══════════════════════════════════════════════════
-   ÉDITEUR VISUEL
+   ÉDITEUR VISUEL — onglets + focus stable
 ═══════════════════════════════════════════════════ */
 class EtageCardEditor extends HTMLElement {
   constructor() {
     super();
     this._config = {};
-    this._hass = null;
+    this._hass   = null;
+    this._tab    = 0;
     this.attachShadow({ mode: 'open' });
   }
 
   set hass(hass) { this._hass = hass; this._render(); }
-  setConfig(config) { this._config = { ...config }; this._render(); }
+  setConfig(config) { this._config = JSON.parse(JSON.stringify(config)); this._render(); }
 
-  _entityOptions(domain) {
-    if (!this._hass) return [];
-    return Object.keys(this._hass.states)
-      .filter(e => !domain || e.startsWith(domain + '.'))
-      .sort();
-  }
-
-  _allEntities() {
-    if (!this._hass) return [];
-    return Object.keys(this._hass.states).sort();
-  }
-
-  _sectionDefs() {
+  _sections() {
     return [
-      { key: 'fenetres',      label: '🪟 Fenêtres',         count: 6, domain: 'binary_sensor', icon: '🪟' },
-      { key: 'temperatures',  label: '🌡️ Températures',     count: 6, domain: 'sensor',         icon: '🌡️' },
-      { key: 'prises',        label: '🔌 Prises électriques',count:12, domain: 'switch',         icon: '🔌' },
-      { key: 'interrupteurs', label: '💡 Interrupteurs',     count: 7, domain: 'switch',         icon: '💡' },
-      { key: 'volets',        label: '🏠 Volets',            count: 6, domain: 'cover',          icon: '🏠' },
-      { key: 'fumee',         label: '🔥 Détecteur fumée',   count: 1, domain: 'binary_sensor',  icon: '🔥' },
+      { key: 'temperatures',  label: 'Températures',  icon: '🌡️', count: 6  },
+      { key: 'fenetres',      label: 'Fenêtres',      icon: '🪟', count: 6  },
+      { key: 'prises',        label: 'Prises',        icon: '🔌', count: 12 },
+      { key: 'interrupteurs', label: 'Lumières',      icon: '💡', count: 7  },
+      { key: 'volets',        label: 'Volets',        icon: '🏠', count: 6  },
+      { key: 'fumee',         label: 'Sécurité',      icon: '🔥', count: 1  },
     ];
   }
 
-  _onChange(key, idx, value) {
-    const cfg = JSON.parse(JSON.stringify(this._config));
-    if (!cfg[key]) cfg[key] = [];
-    cfg[key][idx] = value;
-    this._config = cfg;
-    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: cfg }, bubbles: true, composed: true }));
-    this._render();
-  }
-
-  _onNameChange(key, idx, value) {
-    const cfg = JSON.parse(JSON.stringify(this._config));
-    const nameKey = key + '_names';
-    if (!cfg[nameKey]) cfg[nameKey] = [];
-    cfg[nameKey][idx] = value;
-    this._config = cfg;
-    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: cfg }, bubbles: true, composed: true }));
+  _dispatch() {
+    this.dispatchEvent(new CustomEvent('config-changed', {
+      detail: { config: this._config },
+      bubbles: true, composed: true,
+    }));
   }
 
   _render() {
-    const sections = this._sectionDefs();
-    const style = `
-      <style>
-        :host { display:block; font-family:'Segoe UI',sans-serif; }
-        .editor { background:#0f172a; color:#e2e8f0; padding:16px; border-radius:12px; max-height:460px; overflow-y:auto; }
-        .editor::-webkit-scrollbar { width:6px; }
-        .editor::-webkit-scrollbar-track { background:#1e293b; }
-        .editor::-webkit-scrollbar-thumb { background:#334155; border-radius:3px; }
-        .section-header { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700;
-          color:#38bdf8; text-transform:uppercase; letter-spacing:.08em; margin:18px 0 10px;
-          padding-bottom:6px; border-bottom:1px solid #1e3a5f; }
-        .row { display:grid; grid-template-columns:1fr 160px; gap:8px; margin-bottom:8px; align-items:center; }
-        .row label { font-size:12px; color:#94a3b8; }
-        input[type="text"], select {
-          width:100%; background:#1e293b; border:1px solid #334155; color:#e2e8f0;
-          border-radius:6px; padding:5px 8px; font-size:12px; outline:none; box-sizing:border-box; }
-        input[type="text"]:focus, select:focus { border-color:#38bdf8; }
-        .row2 { display:grid; grid-template-columns:90px 1fr; gap:6px; margin-bottom:8px; align-items:center; }
-        .row2 input { background:#1e293b; border:1px solid #334155; color:#e2e8f0;
-          border-radius:6px; padding:5px 8px; font-size:12px; outline:none; width:100%; box-sizing:border-box; }
-        .pill { display:inline-block; background:#0ea5e9; color:#fff; font-size:10px;
-          border-radius:99px; padding:1px 7px; margin-left:6px; font-weight:600; }
-        h2 { margin:0 0 14px; font-size:15px; color:#f8fafc; text-align:center; letter-spacing:.05em; }
-      </style>
-    `;
+    const sections = this._sections();
+    const sec      = sections[this._tab];
+    const entities = this._config[sec.key]            || [];
+    const names    = this._config[sec.key + '_names'] || [];
+    const allE     = this._hass ? Object.keys(this._hass.states).sort() : [];
 
-    const sectionsHTML = sections.map(sec => {
-      const entities = this._config[sec.key] || [];
-      const names    = this._config[sec.key + '_names'] || [];
-      const opts     = this._allEntities();
-      const rows = Array.from({ length: sec.count }, (_, i) => {
-        const selOpts = opts.map(e => `<option value="${e}" ${entities[i]===e?'selected':''}>${e}</option>`).join('');
-        return `
-          <div class="row2">
-            <input type="text" placeholder="Nom ${i+1}" value="${names[i]||''}"
-              oninput="this.getRootNode().host._onNameChange('${sec.key}',${i},this.value)" />
-            <select onchange="this.getRootNode().host._onChange('${sec.key}',${i},this.value)">
-              <option value="">— choisir entité —</option>
-              ${selOpts}
-            </select>
-          </div>`;
-      }).join('');
+    const tabsHTML = sections.map((s, i) => `
+      <button class="etab${i === this._tab ? ' active' : ''}" data-i="${i}">
+        <span class="eico">${s.icon}</span>
+        <span class="elbl">${s.label}</span>
+      </button>`).join('');
+
+    const rowsHTML = Array.from({ length: sec.count }, (_, i) => {
+      const optsHTML = allE.map(e => `<option value="${e}">${e}</option>`).join('');
+      const safeName = (names[i] || '').replace(/"/g, '&quot;');
       return `
-        <div class="section-header">${sec.icon} ${sec.label} <span class="pill">${sec.count}</span></div>
-        ${rows}`;
+        <div class="erow">
+          <span class="enum">${i + 1}</span>
+          <input class="ename" type="text"
+            placeholder="Label..."
+            data-key="${sec.key}_names"
+            data-idx="${i}"
+            value="${safeName}" />
+          <select class="esel" data-key="${sec.key}" data-idx="${i}">
+            <option value="">— choisir entite —</option>
+            ${optsHTML}
+          </select>
+        </div>`;
     }).join('');
 
-    this.shadowRoot.innerHTML = style + `
-      <div class="editor">
-        <h2>⚙️ Configuration Étage</h2>
-        ${sectionsHTML}
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host { display:block; font-family:'Segoe UI',system-ui,sans-serif; }
+        * { box-sizing:border-box; margin:0; padding:0; }
+        .wrap { background:#0b1120; border:1px solid #1e3a5f; border-radius:12px; overflow:hidden; }
+        .etabs {
+          display:flex; overflow-x:auto; scrollbar-width:none;
+          background:#060d1a; border-bottom:1px solid #1e3a5f;
+        }
+        .etabs::-webkit-scrollbar { display:none; }
+        .etab {
+          flex:1; display:flex; flex-direction:column; align-items:center; gap:2px;
+          padding:8px 4px 7px; background:none; border:none;
+          border-bottom:2px solid transparent;
+          color:#475569; cursor:pointer; transition:.18s;
+          font-size:8px; font-weight:700; letter-spacing:.04em;
+          text-transform:uppercase; white-space:nowrap;
+        }
+        .etab:hover { color:#94a3b8; background:#0f172a44; }
+        .etab.active { color:#38bdf8; border-bottom-color:#38bdf8; background:#0f172a; }
+        .eico { font-size:16px; line-height:1; }
+        .elbl { line-height:1; }
+        .panel {
+          padding:12px 14px 14px;
+          max-height:390px; overflow-y:auto;
+          scrollbar-width:thin; scrollbar-color:#334155 transparent;
+        }
+        .panel::-webkit-scrollbar { width:5px; }
+        .panel::-webkit-scrollbar-thumb { background:#334155; border-radius:3px; }
+        .ptitle {
+          font-size:10px; color:#475569; text-transform:uppercase;
+          letter-spacing:.08em; margin-bottom:10px;
+        }
+        .erow {
+          display:grid;
+          grid-template-columns:18px 130px 1fr;
+          gap:8px; align-items:center;
+          margin-bottom:7px;
+        }
+        .enum { font-size:10px; color:#334155; font-weight:700; text-align:right; }
+        .ename, .esel {
+          width:100%; padding:6px 9px;
+          background:#111827; border:1px solid #1f2f45;
+          color:#e2e8f0; border-radius:7px;
+          font-size:12px; outline:none;
+          transition:border-color .15s, box-shadow .15s;
+        }
+        .ename::placeholder { color:#334155; }
+        .ename:focus, .esel:focus {
+          border-color:#38bdf8;
+          box-shadow:0 0 0 2px #38bdf822;
+        }
+        .esel { cursor:pointer; }
+        option { background:#111827; color:#e2e8f0; }
+      </style>
+      <div class="wrap">
+        <div class="etabs">${tabsHTML}</div>
+        <div class="panel">
+          <div class="ptitle">${sec.icon} ${sec.label} — ${sec.count} element${sec.count > 1 ? 's' : ''}</div>
+          ${rowsHTML}
+        </div>
       </div>`;
+
+    /* Fixer les valeurs des selects APRES rendu */
+    this.shadowRoot.querySelectorAll('select.esel').forEach(sel => {
+      const val = (this._config[sel.dataset.key] || [])[parseInt(sel.dataset.idx)] || '';
+      sel.value = val;
+    });
+
+    /* Onglets : seul endroit qui relance _render() */
+    this.shadowRoot.querySelectorAll('.etab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this._tab = parseInt(btn.dataset.i);
+        this._render();
+      });
+    });
+
+    /* Labels : mise a jour config SANS _render() => focus stable */
+    this.shadowRoot.querySelectorAll('input.ename').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const key = inp.dataset.key;
+        const idx = parseInt(inp.dataset.idx);
+        if (!this._config[key]) this._config[key] = [];
+        this._config[key][idx] = inp.value;
+        this._dispatch();
+      });
+    });
+
+    /* Selects : mise a jour config SANS _render() => liste reste ouverte */
+    this.shadowRoot.querySelectorAll('select.esel').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const key = sel.dataset.key;
+        const idx = parseInt(sel.dataset.idx);
+        if (!this._config[key]) this._config[key] = [];
+        this._config[key][idx] = sel.value;
+        this._dispatch();
+      });
+    });
   }
 }
 customElements.define('etage-card-editor', EtageCardEditor);
+
 
 
 /* ═══════════════════════════════════════════════════
