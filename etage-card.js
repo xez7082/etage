@@ -17,8 +17,20 @@ class EtageCardEditor extends HTMLElement {
     this.attachShadow({ mode: 'open' });
   }
 
-  set hass(hass) { this._hass = hass; this._render(); }
-  setConfig(config) { this._config = JSON.parse(JSON.stringify(config)); this._render(); }
+  set hass(hass) {
+    const wasNull = !this._hass;
+    this._hass = hass;
+    if (wasNull) this._render();
+  }
+
+  setConfig(config) {
+    // HA rappelle setConfig() apres chaque config-changed dispatche.
+    // On compare pour eviter de detruire le DOM pendant l'edition.
+    const incoming = JSON.stringify(config);
+    if (incoming === JSON.stringify(this._config)) return;
+    this._config = JSON.parse(incoming);
+    this._render();
+  }
 
   _sections() {
     return [
@@ -146,13 +158,18 @@ class EtageCardEditor extends HTMLElement {
       });
     });
 
-    /* Labels : mise a jour config SANS _render() => focus stable */
+    /* Labels : on stocke en live dans _config, on dispatche seulement au blur */
     this.shadowRoot.querySelectorAll('input.ename').forEach(inp => {
+      // Mise a jour silencieuse a chaque frappe (pas de dispatch = pas de re-render)
       inp.addEventListener('input', () => {
         const key = inp.dataset.key;
         const idx = parseInt(inp.dataset.idx);
         if (!this._config[key]) this._config[key] = [];
         this._config[key][idx] = inp.value;
+        // On ne dispatche PAS ici pour eviter que HA rappelle setConfig
+      });
+      // Dispatch uniquement quand l'utilisateur quitte le champ
+      inp.addEventListener('blur', () => {
         this._dispatch();
       });
     });
