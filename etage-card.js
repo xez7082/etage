@@ -27,15 +27,17 @@ class EtageCardEditor extends HTMLElement {
   }
 
   _clean(cfg) {
-    const keys = ['temperatures','fenetres','prises','interrupteurs','volets','fumee'];
-    const out  = JSON.parse(JSON.stringify(cfg || {}));
+    const keys    = ['temperatures','fenetres','prises','interrupteurs','volets','fumee'];
+    const subkeys = ['_names','_hum','_bat'];
+    const out     = JSON.parse(JSON.stringify(cfg || {}));
     keys.forEach(k => {
-      if (!Array.isArray(out[k]))      out[k]          = [];
-      if (!Array.isArray(out[k+'_names'])) out[k+'_names'] = [];
-      for (let i = 0; i < out[k].length; i++) {
-        if (!out[k][i])       out[k][i]          = '';
-        if (!out[k+'_names'][i]) out[k+'_names'][i] = '';
-      }
+      if (!Array.isArray(out[k])) out[k] = [];
+      subkeys.forEach(s => {
+        if (!Array.isArray(out[k+s])) out[k+s] = [];
+        for (let i = 0; i < out[k+s].length; i++) {
+          if (!out[k+s][i]) out[k+s][i] = '';
+        }
+      });
     });
     return out;
   }
@@ -49,12 +51,12 @@ class EtageCardEditor extends HTMLElement {
 
   _sections() {
     return [
-      { key:'temperatures',  label:'Températures',  icon:'🌡️', count:6  },
-      { key:'fenetres',      label:'Fenêtres',      icon:'🪟', count:6  },
-      { key:'prises',        label:'Prises',        icon:'🔌', count:12 },
-      { key:'interrupteurs', label:'Lumières',      icon:'💡', count:7  },
-      { key:'volets',        label:'Volets',        icon:'🏠', count:6  },
-      { key:'fumee',         label:'Sécurité',      icon:'🔥', count:1  },
+      { key:'temperatures',  label:'Températures',  icon:'🌡️', count:6,  extras:['hum','bat'] },
+      { key:'fenetres',      label:'Fenêtres',      icon:'🪟', count:6,  extras:['bat']       },
+      { key:'prises',        label:'Prises',        icon:'🔌', count:12, extras:[]            },
+      { key:'interrupteurs', label:'Lumières',      icon:'💡', count:7,  extras:[]            },
+      { key:'volets',        label:'Volets',        icon:'🏠', count:6,  extras:[]            },
+      { key:'fumee',         label:'Sécurité',      icon:'🔥', count:1,  extras:['hum','bat'] },
     ];
   }
 
@@ -71,24 +73,42 @@ class EtageCardEditor extends HTMLElement {
     }).join('');
 
     const rowsHTML = Array.from({length: sec.count}, (_, i) => {
-      const curVal   = vals[i] || '';
-      const curName  = (names[i] || '').replace(/"/g, '&quot;');
-      const optsHTML = allE.map(e => `<option value="${e}">${e}</option>`).join('');
+      const curVal  = vals[i] || '';
+      const curName = (names[i] || '').replace(/"/g, '&quot;');
+      const curHum  = (this._config[sec.key+'_hum'] || [])[i] || '';
+      const curBat  = (this._config[sec.key+'_bat'] || [])[i] || '';
+
+      const makeCombo = (k, v, ph, uid) => `
+        <div class="combo" id="combo-${uid}">
+          <div class="cdisplay">
+            <input class="csearch" type="text" placeholder="${ph}"
+              autocomplete="off" spellcheck="false"
+              value="${v}" data-k="${k}" data-i="${i}" />
+            <button class="cclr" data-k="${k}" data-i="${i}">✕</button>
+          </div>
+          <div class="cdrop" data-i="${i}" data-k="${k}"></div>
+        </div>`;
+
+      const extrasHTML = (sec.extras || []).map(ext => {
+        if (ext === 'hum') return `<div class="extrow">
+          <span class="extlbl">💧 Humid.</span>
+          ${makeCombo(sec.key+'_hum', curHum, '🔍 Capteur humidité…', sec.key+'hum'+i)}
+        </div>`;
+        if (ext === 'bat') return `<div class="extrow">
+          <span class="extlbl">🔋 Bat.</span>
+          ${makeCombo(sec.key+'_bat', curBat, '🔍 Capteur batterie…', sec.key+'bat'+i)}
+        </div>`;
+        return '';
+      }).join('');
+
       return `
         <div class="erow">
           <span class="enum">${i+1}</span>
           <input class="ename" type="text" placeholder="Label…" value="${curName}"
             data-k="${sec.key}_names" data-i="${i}" />
-          <div class="combo">
-            <div class="cdisplay">
-              <input class="csearch" type="text" placeholder="🔍 Rechercher…"
-                autocomplete="off" spellcheck="false"
-                value="${curVal}" data-k="${sec.key}" data-i="${i}" />
-              <button class="cclr" data-k="${sec.key}" data-i="${i}">✕</button>
-            </div>
-            <div class="cdrop" data-i="${i}"></div>
-          </div>
-        </div>`;
+          ${makeCombo(sec.key, curVal, '🔍 Rechercher sensor…', sec.key+'main'+i)}
+        </div>
+        ${extrasHTML}`;
     }).join('');
 
     this.shadowRoot.innerHTML = `
@@ -137,6 +157,12 @@ class EtageCardEditor extends HTMLElement {
         .copt:hover,.copt.sel{background:#1e3a5f;color:#e2e8f0}
         .copt.sel{color:#38bdf8}
         .cnone{padding:8px 10px;font-size:11px;color:#475569;font-style:italic}
+        .extrow{display:grid;grid-template-columns:60px 1fr;gap:7px;align-items:center;
+          margin-bottom:5px;margin-left:25px}
+        .extlbl{font-size:10px;color:#475569;white-space:nowrap}
+        .extrow{display:grid;grid-template-columns:60px 1fr;gap:7px;align-items:center;
+          margin-bottom:5px;margin-left:25px}
+        .extlbl{font-size:10px;color:#475569;white-space:nowrap}
         option{background:#111827;color:#e2e8f0}
       </style>
       <div class="wrap">
@@ -170,7 +196,7 @@ class EtageCardEditor extends HTMLElement {
     this.shadowRoot.querySelectorAll('.csearch').forEach(inp => {
       const i    = +inp.dataset.i;
       const k    = inp.dataset.k;
-      const drop = this.shadowRoot.querySelector(`.cdrop[data-i="${i}"]`);
+      const drop = this.shadowRoot.querySelector(`.cdrop[data-i="${i}"][data-k="${k}"]`);
 
       const fill = (q) => {
         q = q.toLowerCase();
@@ -261,21 +287,24 @@ class EtageCard extends HTMLElement {
   }
 
   /* ── Extra pills : humidité + batterie ── */
-  _extra(e) {
-    if (!e || !this._hass) return '';
-    const s = this._hass.states[e];
-    if (!s) return '';
-    const a   = s.attributes || {};
-    const hum = a.humidity ?? null;
-    const bat = a.battery ?? a.battery_level ?? a.battery_percent ?? null;
-    let html  = '';
-    if (hum !== null) {
-      const h = parseFloat(hum);
+  _extra(mainE, humE, batE) {
+    let html = '';
+    // Humidité : attribut OU entité dédiée
+    const humAttr = this._attr(mainE, 'humidity');
+    const humVal  = humAttr !== null ? humAttr
+                  : humE ? (this._st(humE) ? parseFloat(this._st(humE).state) : null) : null;
+    if (humVal !== null && !isNaN(humVal)) {
+      const h = parseFloat(humVal);
       const c = h<40?'#60a5fa':h<60?'#34d399':h<75?'#fbbf24':'#f43f5e';
       html += `<span class="xpill"><span>💧</span><b style="color:${c}">${h.toFixed(0)}%</b></span>`;
     }
-    if (bat !== null) {
-      const b = parseFloat(bat);
+    // Batterie : attribut OU entité dédiée
+    const a = (mainE && this._hass && this._hass.states[mainE]) ? (this._hass.states[mainE].attributes||{}) : {};
+    const batAttr = a.battery ?? a.battery_level ?? a.battery_percent ?? null;
+    const batVal  = batAttr !== null ? batAttr
+                  : batE ? (this._st(batE) ? parseFloat(this._st(batE).state) : null) : null;
+    if (batVal !== null && !isNaN(batVal)) {
+      const b = parseFloat(batVal);
       const c = b>60?'#34d399':b>30?'#fbbf24':'#f43f5e';
       const ico = b>60?'🔋':b>30?'🪫':'⚠️';
       html += `<span class="xpill"><span>${ico}</span><b style="color:${c}">${b.toFixed(0)}%</b></span>`;
@@ -326,7 +355,9 @@ class EtageCard extends HTMLElement {
       const col = isNaN(val) ? '#38bdf8' : this._tempColor(val);
       const pct = isNaN(val) ? 0 : Math.min(100, Math.max(0, ((val-10)/30)*100));
       const nm  = names[i] || e.split('.')[1].replace(/_/g,' ');
-      const xtr = this._extra(e);
+      const humE = (this._config.temperatures_hum||[])[i]||'';
+      const batE = (this._config.temperatures_bat||[])[i]||'';
+      const xtr = this._extra(e,humE,batE);
       return `<div class="tcard">
         <div class="tname">${nm}</div>
         <div class="tval" style="color:${col}">${isNaN(val)?'—':val.toFixed(1)}<span class="tunit">${unit}</span></div>
@@ -345,7 +376,8 @@ class EtageCard extends HTMLElement {
       if (!e) return '';
       const open = this._on(e);
       const nm   = names[i] || e.split('.')[1].replace(/_/g,' ');
-      const xtr  = this._extra(e);
+      const batE = (this._config.fenetres_bat||[])[i]||'';
+      const xtr  = this._extra(e,'',batE);
       return `<div class="wcard ${open?'wopen':''}">
         ${open ? this._icoWinOpen() : this._icoWinClosed()}
         <div class="wname">${nm}</div>
@@ -430,7 +462,9 @@ class EtageCard extends HTMLElement {
     const s    = this._st(e);
     const nm   = names[0] || e.split('.')[1].replace(/_/g,' ');
     const last = s?.last_changed ? new Date(s.last_changed).toLocaleString('fr-FR') : '—';
-    const xtr  = this._extra(e);
+    const humE = (this._config.fumee_hum||[])[0]||'';
+    const batE = (this._config.fumee_bat||[])[0]||'';
+    const xtr  = this._extra(e,humE,batE);
     return `<div class="fcenter">
       <div class="fring ${on?'falarm':'fok'}">
         ${on ? this._icoSmoke() : this._icoCheck()}
